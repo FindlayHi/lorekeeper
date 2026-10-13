@@ -1,0 +1,165 @@
+{
+ "game": "Dead by Daylight",
+ "steamAppId": 381210,
+ "sources": [
+  {
+   "host": "deadbydaylight.wiki.gg",
+   "license": "CC BY-NC-SA 3.0",
+   "terms": "Read 2026-10-13: page footer says content is CC BY-NC-SA 3.0 (pages from before Nov 2024 adapted from the Fandom wiki); robots.txt allows /wiki/ article and category pages and disallows api.php; its Content-Signal line is search=yes, ai-train=no, use=reference with no ai-input signal.",
+   "seeds": [
+    {
+     "category": "Survivor Perks",
+     "kind": "perk",
+     "limit": 400
+    },
+    {
+     "category": "Killer Perks",
+     "kind": "perk",
+     "limit": 400
+    },
+    {
+     "category": "Unique Survivor Perks",
+     "kind": "perk",
+     "limit": 400
+    },
+    {
+     "category": "Unique Killer Perks",
+     "kind": "perk",
+     "limit": 400
+    },
+    {
+     "category": "Killers",
+     "kind": "boss",
+     "limit": 100
+    },
+    {
+     "category": "Survivors",
+     "kind": "lore",
+     "limit": 100
+    },
+    {
+     "category": "Game Mechanics",
+     "kind": "mechanic",
+     "limit": 150
+    },
+    {
+     "category": "Status Effects",
+     "kind": "status",
+     "limit": 100
+    },
+    {
+     "category": "Props",
+     "kind": "mechanic",
+     "limit": 60
+    },
+    {
+     "category": "Powers",
+     "kind": "power",
+     "limit": 100
+    },
+    {
+     "category": "Common Items",
+     "kind": "item",
+     "limit": 40
+    },
+    {
+     "category": "Uncommon Items",
+     "kind": "item",
+     "limit": 40
+    },
+    {
+     "category": "Rare Items",
+     "kind": "item",
+     "limit": 40
+    },
+    {
+     "category": "Very Rare Items",
+     "kind": "item",
+     "limit": 40
+    },
+    {
+     "pages": [
+      "Generators",
+      "Hooks",
+      "Pallets",
+      "Totems",
+      "Obsession",
+      "Skill Checks",
+      "Med-Kits",
+      "Toolbox",
+      "Flashlight",
+      "Bloodpoints"
+     ],
+     "kind": "mechanic"
+    }
+   ],
+   "skipSections": [
+    "History",
+    "Gallery",
+    "References",
+    "See also",
+    "External links",
+    "Navigation",
+    "Video",
+    "Videos",
+    "Trivia",
+    "Change Log",
+    "Cosmetic Options",
+    "Alternate Character Models",
+    "Achievements",
+    "The Archives"
+   ],
+   "entityKinds": [
+    "perk",
+    "boss",
+    "item",
+    "status",
+    "power"
+   ],
+   "entitySkipSections": [
+    "Lore",
+    "The Archives",
+    "Cosmetic Options",
+    "Base Cosmetics",
+    "Alternate Character Models",
+    "Achievements",
+    "Change Log",
+    "Prestige",
+    "Alternatives",
+    "Rift",
+    "In-Game Store",
+    "Exclusives",
+    "Event",
+    "DLC",
+    "Special",
+    "Default"
+   ],
+   "dropLines": [
+    "^Prestige .* for all other Characters\\.$",
+    "^(Icon|Cost)$",
+    "^(2,500|3,250|4,000)$"
+   ],
+   "aliases": {
+    "Decisive Strike": [
+     "ds"
+    ],
+    "Dead Hard": [
+     "dh"
+    ],
+    "Sprint Burst": [
+     "sb"
+    ],
+    "Borrowed Time": [
+     "bt"
+    ],
+    "Hex: Ruin": [
+     "ruin"
+    ],
+    "Self-Care": [
+     "self care"
+    ]
+   },
+   "entityStart": "^Name$"
+  }
+ ]
+}

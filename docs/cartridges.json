@@ -133,7 +133,13 @@
       }
      ]
     }
-   ]
+   ],
+   "lore": {
+    "file": "lore/dead-by-daylight.zip",
+    "sha256": "e9650fc6b6aa3f778eeb112d4dbb1ffb0be2e5c8af2e39db386405b34002e0c8",
+    "version": 1,
+    "builtForBuild": ""
+   }
   }
  }
 }

@@ -65,14 +65,19 @@ def rank(urls):
     return sorted(urls, key=score)
 
 
-def words(text):
-    """Content words, roughly stemmed ("botchlings" ~ "botchling"), for matching a question to sections."""
-    out = set()
+def stems(text):
+    """Content words in order, roughly stemmed ("botchlings" ~ "botchling"); repeats kept."""
+    out = []
     for w in re.findall(r"[a-z][a-z']{3,}", text.lower()):
         if not re.fullmatch(STOP, w) and not re.fullmatch(GENERIC, w):
             w = re.sub(r"'s?$", '', w)
-            out.add(w if re.search(r'(?:us|ss|is)$', w) else re.sub(r'(?:ing|ed|es|s)$', '', w))
+            out.append(w if re.search(r'(?:us|ss|is)$', w) else re.sub(r'(?:ing|ed|es|s)$', '', w))
     return out
+
+
+def words(text):
+    """The set of stems: for matching a question to sections."""
+    return set(stems(text))
 
 
 def relevant(text, question, most=5000, lead=1500):

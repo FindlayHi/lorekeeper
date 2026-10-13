@@ -31,6 +31,7 @@ DEFAULTS = {
     'boxSeconds': 12,
     'spoilers': False,           # True: answers ignore your progress notes
     'screen': True,              # "what is this item" sends a screenshot
+    'lore': True,                # answer from the game's lore pack first (if its cartridge has one), the live wiki after
     'checkUpdates': True,        # once a day, ask GitHub whether there's a newer release (tray → Update when there is)
     'rommUrl': '',               # set by tray → RomM → Connect RomM… (the token is in Windows Credential Manager)
     'telemetry': None,           # anonymous install/daily-use counts (telemetry.py): None = not asked yet, asked once on first run

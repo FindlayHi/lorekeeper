@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 from PIL import Image, ImageFilter
-import lookup
+import lookup, rag
 
 URL = 'https://lorekeeper-cgv.pages.dev/cartridges.json'
 BUNDLED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'cartridges.json')
@@ -48,7 +48,8 @@ def valid(doc):
                      'needs': s['needs'] if re.fullmatch(r'[a-z -]{2,30}', str(s.get('needs', ''))) else ''}
                     for s in r['sets'] if s['shape'] in SHAPES and PREFIX.fullmatch(s['prefix']) and re.fullmatch(r'[a-z -]{2,30}', s['kind'])]
             if HOST.fullmatch(r['host']) and sets:
-                out[name.lower()] = {'host': r['host'], 'sets': sets, 'asks': [a for a in r.get('asks', []) if re.fullmatch(r'[a-z -]{2,30}', a)]}
+                out[name.lower()] = {'host': r['host'], 'sets': sets, 'asks': [a for a in r.get('asks', []) if re.fullmatch(r'[a-z -]{2,30}', a)],
+                                   'lore': rag.pointer(r.get('lore'))}
         except (KeyError, TypeError):
             pass
     return out
@@ -584,7 +585,8 @@ def find(img, bs):
 
 
 def text(img, game, folder, question=''):
-    """For the question: what's on screen, read from its icons, and each thing's wiki page; or why not, or ''."""
+    """For the question: what's on screen, read from its icons, and each thing's entry in the game's lore pack, else its wiki page;
+    or why not, or ''."""
     r = cart(game, folder)
     if not r or img is None:
         return ''
@@ -601,7 +603,7 @@ def text(img, game, folder, question=''):
             by[p['kind']].append(p['name'])
     names = [n for ns in by.values() for n in ns][:PAGES]
     with ThreadPoolExecutor(4) as ex:
-        pages = list(ex.map(lambda n: lookup.page(f"https://{r['host']}/wiki/" + urllib.parse.quote(n.replace(' ', '_')), question, 1200), names))
+        pages = list(ex.map(lambda n: (r['lore'] and rag.entry(game['name'], r['lore'], n)) or lookup.page(f"https://{r['host']}/wiki/" + urllib.parse.quote(n.replace(' ', '_')), question, 1200), names))
     return ('On screen, read from their icons (exact names; trust these over the screenshot): '
             + '; '.join(f"{k}: {', '.join(ns)}" for k, ns in by.items())
             + ''.join(f'\n\n{n} (wiki):\n{p}' for n, p in zip(names, pages) if p))

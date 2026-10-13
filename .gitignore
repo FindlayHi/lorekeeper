@@ -3,3 +3,8 @@
 __pycache__/
 build/
 dist/
+lore/*/raw/
+lore/*/chunks.jsonl
+lore/*/quarantine.json
+lore/*/entities.jsonl
+lore/*/*.local.zip

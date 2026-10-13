@@ -27,7 +27,7 @@ if FROZEN:
     os.makedirs(_logdir, exist_ok=True)
     sys.stdout = sys.stderr = open(os.path.join(_logdir, 'app.log'), 'a', encoding='utf-8', buffering=1)
     print(f"--- {__import__('time').strftime('%Y-%m-%d %H:%M:%S')} Lorekeeper starting", flush=True)
-import brain, capture, commands, config, games, gear, listen, lookup, notes, icons, romm, telemetry, updater, voice  # noqa: E402
+import brain, capture, commands, config, games, gear, listen, lookup, notes, icons, rag, romm, telemetry, updater, voice  # noqa: E402
 
 LOG = os.path.join(config.DIR, 'log.jsonl')
 TURN_SECS = 600
@@ -270,6 +270,15 @@ class App:
         log({'game': g['name'], 'q': q, 'a': f'saved {where}', 'item': item})
         return self.say(q, f"Saved {item['name']} as your {where}.")
 
+    def lore(self, q):
+        """What the game's lore pack says about the question, '' if the cartridge has none or nothing in it is sure."""
+        try:
+            c = self.cfg['lore'] and icons.cart(self.game, notes.FOLDER)
+            return rag.context(self.game['name'], c['lore'], q, config.DIR) if c else ''
+        except Exception as e:
+            print('lore:', e)
+            return ''
+
     def answer(self, q, gen):
         started = time.time()
         spoilers = self.cfg['spoilers'] or self.spoil_next
@@ -290,7 +299,7 @@ class App:
             self.voice.say("I couldn't see the screen, so going by your words.")
         now = time.time()
         self.turns = [t for t in self.turns if now - t['t'] < TURN_SECS][-3:]
-        wiki = '' if shots or saved or kit else lookup.wiki(q, self.game and self.game['name'], folder=notes.FOLDER, progress=notes.read(self.game, 3))   # a screenshot names the thing; the model searches then
+        wiki = '' if shots or saved or kit else self.lore(q) or lookup.wiki(q, self.game and self.game['name'], folder=notes.FOLDER, progress=notes.read(self.game, 3))   # a screenshot names the thing; the model searches then
         wiki = '\n\n'.join(x for x in (romm.context(self.game, q), wiki) if x)   # RomM walkthroughs first: they're the player's own
         text = brain.request(q, self.game, notes.read(self.game), self.turns, wiki, kit, seen)
         spoken = []
