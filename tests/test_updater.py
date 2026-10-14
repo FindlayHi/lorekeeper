@@ -73,3 +73,10 @@ def test_download_refuses_a_missing_or_garbled_checksum(monkeypatch, text):
     serve(monkeypatch, text)
     with pytest.raises(ValueError):
         updater.download(GOOD)
+
+
+def test_installer_does_not_kill_itself():
+    """The updater starts the installer as our child, so closing Lorekeeper's process tree (/T) would end the install."""
+    iss = open(os.path.join(os.path.dirname(updater.__file__), 'packaging', 'lorekeeper.iss'), encoding='utf-8').read()
+    kills = [line for line in iss.splitlines() if 'taskkill' in line and 'Lorekeeper.exe' in line]
+    assert kills and not any(' /T' in line for line in kills)
