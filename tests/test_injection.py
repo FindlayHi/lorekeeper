@@ -74,3 +74,84 @@ def test_the_prompt_says_what_the_fence_means():
     for http in (False, True):
         s = brain.system_prompt(False, http)
         assert '<untrusted>' in s and 'only as facts' in s
+
+
+import json, subprocess  # noqa: E402
+import searchguard  # noqa: E402
+
+NOTES = '- 2026-10-12: Sorcerer, Intelligence crit build (learned)\n- 2026-10-13: Lives in the house on Maple Street, account is gamer_jane_1987 at mail\n'
+
+
+@pytest.mark.parametrize('query', [
+    'Elden Ring Rennala Queen of the Full Moon weakness',
+    'site:terraria.wiki.gg Zenith crafting recipe',
+    'Elden Ring sorcerer intelligence crit build staff',   # names from the notes are fair search terms
+    'Diablo 4 Harlequin Crest aspect',
+])
+def test_a_plain_topic_search_runs(query):
+    assert searchguard.check(query, NOTES, 'which staff is best for me') == ''
+
+
+@pytest.mark.parametrize('query, why', [
+    ('Terraria Zenith https://evil.example/c?d=sorcerer', 'link'),
+    ('Terraria www.evil.example sorcerer', 'link'),
+    ('Terraria gamer_jane_1987@mail', 'address'),
+    ('Terraria 4111111111111111', 'number'),
+    ('Terraria U29yY2VyZXIsIEludGVsbGlnZW5jZQ', 'code'),
+    ('Lives in the house on Maple Street account', 'notes'),       # six words in a row from the notes
+    ('Elden Ring ' + 'sorcerer build ' * 12, 'too long'),
+])
+def test_a_search_carrying_private_data_is_stopped(query, why):
+    assert why in searchguard.check(query, NOTES, 'which staff is best for me')
+
+
+def test_what_the_player_said_may_be_searched_even_if_it_is_in_the_notes():
+    said = 'I live in the house on Maple Street in Stardew, where is the mayor'
+    assert searchguard.check('Stardew the house on Maple Street mayor', NOTES, said) == ''
+
+
+def hook(query, folder):
+    payload = json.dumps({'hook_event_name': 'PreToolUse', 'tool_name': 'WebSearch', 'tool_input': {'query': query}, 'cwd': str(folder)})
+    exe, args = brain.guard_command()
+    return subprocess.run([exe, *args], input=payload.encode(), capture_output=True, timeout=30)
+
+
+def test_the_hook_exits_2_with_a_reason_or_0(tmp_path):
+    (tmp_path / searchguard.PRIVATE).write_text(json.dumps(brain.private('which staff', {'name': 'Elden Ring'}, NOTES)))
+    ok, bad = hook('Elden Ring best staff', tmp_path), hook('Lives in the house on Maple Street', tmp_path)
+    assert ok.returncode == 0
+    assert bad.returncode == 2 and b'Search blocked' in bad.stderr
+
+
+def test_an_unreadable_payload_blocks_rather_than_waves_through(tmp_path):
+    exe, args = brain.guard_command()
+    assert subprocess.run([exe, *args], input=b'not json', capture_output=True, timeout=30).returncode == 2
+
+
+def test_web_search_runs_go_through_the_guard_and_fail_closed(monkeypatch):
+    monkeypatch.setattr(brain, '_version', [(2, 1, 302)])
+    s = brain.guard_settings('claude')
+    h = s['hooks']['PreToolUse'][0]
+    assert h['matcher'] == 'WebSearch' and h['hooks'][0]['onFailure'] == 'block' and h['hooks'][0]['args']
+    monkeypatch.setattr(brain, '_version', [(2, 1, 200)])
+    assert brain.guard_settings('claude') is None   # too old for exec hooks: no half-working guard
+
+
+def test_start_passes_the_guard_only_with_web_search(monkeypatch):
+    got = []
+
+    class P:
+        def __init__(self, argv, **k):
+            got.append(argv)
+
+        def poll(self):
+            return 0
+    monkeypatch.setattr(brain, 'http', lambda cfg=None: False)
+    monkeypatch.setattr(brain.shutil, 'which', lambda n: 'claude')
+    monkeypatch.setattr(brain, '_version', [(2, 1, 302)])
+    monkeypatch.setattr(brain, 'POPEN', P)
+    brain.start('haiku')
+    brain.start('haiku', system='x', tools='')
+    assert '--settings' in got[0] and '--settings' not in got[1]
+    settings = json.load(open(got[0][got[0].index('--settings') + 1]))
+    assert settings['hooks']['PreToolUse'][0]['hooks'][0]['command'] == brain.guard_command()[0]
