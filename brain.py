@@ -140,6 +140,53 @@ def _model(model, cfg):
     return (deep and cfg.get('aiDeepModel')) or cfg.get('aiModel') or ''
 
 
+GUARD_SINCE = (2, 1, 295)   # Claude Code that runs a hook as a plain .exe with arguments, and blocks the search if it can't run
+_version = []
+
+
+def claude_version(claude):
+    """(2, 1, 302) for the installed Claude Code, or () if it won't say. Asked once."""
+    if not _version:
+        try:
+            out = subprocess.run([claude, '--version'], capture_output=True, text=True, timeout=15,
+                                 creationflags=0x08000000 if sys.platform == 'win32' else 0).stdout
+            _version.append(tuple(int(n) for n in re.match(r'\s*(\d+)\.(\d+)\.(\d+)', out).groups()))
+        except Exception:
+            _version.append(())
+    return _version[0]
+
+
+def guard_command():
+    """(exe, args) that runs searchguard.py: the installed app runs itself; from source, the console python beside pythonw
+    (pythonw has no stderr to give Claude the reason)."""
+    if getattr(sys, 'frozen', False):
+        return sys.executable, ['--search-guard']
+    py = os.path.join(os.path.dirname(sys.executable), 'python.exe' if sys.platform == 'win32' else 'python3')
+    return (py if os.path.exists(py) else sys.executable), [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'searchguard.py')]
+
+
+def guard_settings(claude):
+    """--settings for a `claude -p` with WebSearch: every search goes through searchguard first, and a guard that can't
+    start blocks the search instead of waving it through. None on a Claude Code too old for that."""
+    if claude_version(claude) < GUARD_SINCE:
+        if len(_version) == 1:   # said once
+            _version.append('warned')
+            print(f"search guard off: Claude Code {'.'.join(map(str, _version[0])) or '?'} is older than "
+                  f"{'.'.join(map(str, GUARD_SINCE))}; update it to turn it on", flush=True)
+        return None
+    exe, args = guard_command()
+    hook = {'type': 'command', 'command': exe, 'args': args, 'onFailure': 'block', 'timeout': 10}
+    return {'hooks': {'PreToolUse': [{'matcher': 'WebSearch', 'hooks': [hook]}]}}
+
+
+def private(question, game, notes='', turns=(), gear=''):
+    """What the search guard keeps out of search queries: the notes and gear sent with the question. Allowed: what the player
+    said (this question and the last few) and the game, even where it overlaps the notes. Not the answers: a steered answer
+    could quote the notes and so clear them for the next search."""
+    return {'allowed': '\n'.join([question, game['name'] if game else ''] + [t['q'] for t in turns]),
+            'private': '\n'.join(x for x in (notes, gear) if x)}
+
+
 def start(model='haiku', spoilers=False, system=None, tools='WebSearch'):   # no WebFetch: a page can't make it send notes anywhere
     """A `claude -p` waiting for the request on stdin, or an Http for an OpenAI-compatible server.
     system/tools: for one-off jobs (reading a tooltip into JSON)."""
@@ -153,12 +200,18 @@ def start(model='haiku', spoilers=False, system=None, tools='WebSearch'):   # no
     sp = os.path.join(d, 'system.md')   # a file: claude.cmd runs through cmd.exe, which cuts command lines at 8 KB
     with open(sp, 'w', encoding='utf-8') as f:
         f.write(system or system_prompt(spoilers))
+    extra = []
+    guard = 'WebSearch' in tools.split(',') and guard_settings(claude)
+    if guard:
+        with open(os.path.join(d, 'settings.json'), 'w', encoding='utf-8') as f:
+            json.dump(guard, f)
+        extra = ['--settings', os.path.join(d, 'settings.json')]
     errors = tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='replace')
     p = POPEN([claude, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
                '--model', model, '--system-prompt-file', sp, '--tools', tools, '--permission-mode', 'bypassPermissions',
-               '--setting-sources', '', '--no-session-persistence', '--strict-mcp-config', '--disable-slash-commands'],
+               '--setting-sources', '', *extra, '--no-session-persistence', '--strict-mcp-config', '--disable-slash-commands'],
               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True, encoding='utf-8', errors='replace', cwd=d)
-    p.model, p.spoilers, p.errors = model, spoilers, errors
+    p.model, p.spoilers, p.errors, p.dir = model, spoilers, errors, d
     atexit.register(stop, p)
     return p
 
@@ -248,10 +301,15 @@ def split_note(answer, question):
     return spoken(answer), (note if note_ok(note, question) else '')
 
 
-def ask(p, text, shots=(), on_text=lambda s: None):
-    """Sends the request, streams the answer's text to on_text as it arrives -> (answer, usd). shots: [(jpeg path, label)]."""
+def ask(p, text, shots=(), on_text=lambda s: None, keep=None):
+    """Sends the request, streams the answer's text to on_text as it arrives -> (answer, usd). shots: [(jpeg path, label)].
+    keep: private(...) for the search guard."""
     if isinstance(p, Http):
         return ask_http(p, text, shots, on_text), 0
+    if keep and getattr(p, 'dir', None):
+        import searchguard
+        with open(os.path.join(p.dir, searchguard.PRIVATE), 'w', encoding='utf-8') as f:
+            json.dump(keep, f)
     content = [b for path, label in shots if os.path.exists(path) for b in (
         {'type': 'text', 'text': label},
         {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.b64encode(open(path, 'rb').read()).decode()}})]

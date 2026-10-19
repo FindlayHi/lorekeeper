@@ -14,6 +14,9 @@ Settings: %APPDATA%/Lorekeeper/config.json. Log: log.jsonl beside it.
 """
 import json, os, re, sys, threading, time
 
+if sys.argv[1:2] == ['--search-guard']:   # Claude Code's check on each web search (brain.guard_settings): nothing else loads
+    import searchguard
+    sys.exit(searchguard.main())
 if sys.platform == 'win32':
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -320,7 +323,7 @@ class App:
             if self.box:
                 self.box.show(q, s, stay=True)
         try:
-            a, usd = brain.ask(p, text, saved + shots, streamed)
+            a, usd = brain.ask(p, text, saved + shots, streamed, brain.private(q, self.game, notes.read(self.game), self.turns, kit))
         finally:
             for path, _ in shots:
                 _rm(path)
@@ -658,6 +661,23 @@ def tray(app, box):
     return icon
 
 
+def search_guard_works():
+    """Runs the hook the way Claude Code will (brain.guard_command): a link must be stopped (exit 2), a plain query let through.
+    In the installed build this is Lorekeeper.exe --search-guard: a windowed exe still reads stdin and sets its exit code."""
+    import subprocess
+    exe, args = brain.guard_command()
+
+    def run(query):
+        payload = json.dumps({'hook_event_name': 'PreToolUse', 'tool_name': 'WebSearch', 'tool_input': {'query': query}, 'cwd': config.DIR})
+        return subprocess.run([exe, *args], input=payload.encode(), capture_output=True, timeout=30,
+                              creationflags=0x08000000 if sys.platform == 'win32' else 0)
+    t = time.time()
+    clean, bad = run('Terraria Zenith crafting'), run('Terraria https://evil.example/?n=notes')
+    if clean.returncode != 0 or bad.returncode != 2:
+        raise RuntimeError(f'clean query exit {clean.returncode}, link exit {bad.returncode} (want 0 and 2)')
+    return f'blocks a link, lets a plain search through ({(time.time() - t) / 2 * 1000:.0f} ms a search)'
+
+
 def selftest(ci=False):
     """ci: a build machine with no mic, speakers, screen or Claude Code; still checks every library loads and works."""
     ok = True
@@ -682,6 +702,7 @@ def selftest(ci=False):
     if not ci:
         check('sound out', lambda: __import__('sounddevice').query_devices(kind='output')['name'])
     check('sound libs', lambda: (__import__('sounddevice'), __import__('soundfile'))[1].__name__)
+    check('search guard', search_guard_works)
     check('ai', lambda: (lambda ok, msg: msg if ok or brain.http() else 'Claude Code not installed (first run offers to install it)')(*brain.ready()))
     check('games index', lambda: f'{len(games.build())} games')
     print('SELFTEST', 'PASSED' if ok else 'FAILED', flush=True)
@@ -729,7 +750,8 @@ def main():
         t = time.time()
         wiki = '\n\n'.join(x for x in (romm.context(g, q), lookup.wiki(q, g and g['name'], folder=notes.FOLDER, progress=notes.read(g, 3))) if x)
         print(f'(wiki {len(wiki)} chars in {time.time() - t:.1f}s)')
-        a, usd = brain.ask(p, brain.request(q, g, notes.read(g), [], wiki, gear.text(g) if gear.wants(q) else ''))
+        kit = gear.text(g) if gear.wants(q) else ''
+        a, usd = brain.ask(p, brain.request(q, g, notes.read(g), [], wiki, kit), keep=brain.private(q, g, notes.read(g), [], kit))
         a, learned = brain.split_note(a, q)
         if learned and g:
             notes.add(g, learned + ' (learned)')
