@@ -211,3 +211,11 @@ def test_an_answer_that_was_all_outside_the_game_says_so():
 def test_a_game_named_like_a_site_is_still_talked_about():
     a = 'In Hole.io you grow by swallowing things. Visit holehelp.io for skins.'
     assert brain.split_note(a, 'how do I grow', 'Hole.io')[0] == 'In Hole.io you grow by swallowing things.'
+
+
+def test_an_earlier_answer_cannot_clear_the_notes_for_a_search():
+    leak = 'Lives in the house on Maple Street account'
+    keep = brain.private('where is that', {'name': 'Stardew Valley'}, NOTES, [{'q': 'who is the mayor', 'a': leak}])
+    assert 'notes' in searchguard.check(leak, keep['private'], keep['allowed'])
+    keep = brain.private('where is that', {'name': 'Stardew Valley'}, NOTES, [{'q': 'who Lives in the house on Maple Street account', 'a': 'x'}])
+    assert searchguard.check(leak, keep['private'], keep['allowed']) == ''   # the player said it
