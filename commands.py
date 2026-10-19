@@ -10,6 +10,7 @@ RULES = [
     ('spoil', r'(?:(?:ok(?:ay)?,? )?spoil (?:it|that|away)(?: for me)?|spoilers? on|go ahead and spoil(?: it)?)'),
     ('playing', r"(?:i'?m|i am|we'?re) (?:now )?playing (.+)"),
     ('auto', r'(?:detect (?:the )?game|auto(?:matic)?(?: detect)?|forget (?:the|which) game)'),
+    ('unnote', r"(?:forget|delete|remove|scratch|undo|drop) (?:that|the|this|the last|your last|my last) note|that note'?s wrong|don'?t note that"),
     ('gear_save', r'(?:save|remember|store|log|record|track) (?:this|that|it)(?: item| one)? (?:as|for) (my .+)'),
     ('gear_save', r'(?:this|that) is my (?:new )?(.+)'),
     ('gear_save', r"(?:i )?(?:just )?equipped (?:this|that|it) (?:as|for|in) (my .+)"),

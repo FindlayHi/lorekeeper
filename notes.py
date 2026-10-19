@@ -38,6 +38,25 @@ def add(game, line):
         threading.Thread(target=romm.save_notes, args=(game, read(game, 200)), daemon=True).start()
 
 
+def forget_learned(game):
+    """Takes back the last note Lorekeeper learned by itself ("forget that note") -> the note, or ''."""
+    try:
+        with open(path(game), encoding='utf-8') as f:
+            lines = f.readlines()
+    except OSError:
+        return ''
+    i = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].rstrip().endswith('(learned)')), None)
+    if i is None:
+        return ''
+    gone = lines.pop(i)
+    with open(path(game), 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+    if game.get('source') == 'romm':
+        import threading, romm
+        threading.Thread(target=romm.save_notes, args=(game, read(game, 200)), daemon=True).start()
+    return re.sub(r'^- [\d-]+: |\s*\(learned\)$', '', gone.strip())
+
+
 def names(game):
     """Capitalized words from the notes (bosses, places, characters), for Whisper's hint."""
     seen = []
