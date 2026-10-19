@@ -161,5 +161,5 @@ def test_an_earlier_answer_cannot_clear_the_notes_for_a_search():
     leak = 'Lives in the house on Maple Street account'
     keep = brain.private('where is that', {'name': 'Stardew Valley'}, NOTES, [{'q': 'who is the mayor', 'a': leak}])
     assert 'notes' in searchguard.check(leak, keep['private'], keep['allowed'])
-    keep = brain.private('where is that', {'name': 'Stardew Valley'}, NOTES, [{'q': 'I live in the house on Maple Street account', 'a': 'x'}])
+    keep = brain.private('where is that', {'name': 'Stardew Valley'}, NOTES, [{'q': 'who Lives in the house on Maple Street account', 'a': 'x'}])
     assert searchguard.check(leak, keep['private'], keep['allowed']) == ''   # the player said it
