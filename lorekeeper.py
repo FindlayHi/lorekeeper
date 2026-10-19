@@ -336,9 +336,7 @@ class App:
             self.voice.stop()   # what was spoken was not the answer after all
         self.voice.say(' '.join(rest))
         if self.box:
-            self.box.show(q, a + (f'
-
-Noted: {learned}. Say "forget that note" if it's wrong.' if learned and self.game else ''))   # seen, never spoken
+            self.box.show(q, a + (f'\n\nNoted: {learned}. Say "forget that note" if it\'s wrong.' if learned and self.game else ''))   # seen, never spoken
         if self.listener.on:
             self.after_speaking()
         self.last, self.last_q = a, q
