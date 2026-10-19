@@ -237,6 +237,9 @@ class App:
                 return self.say(q, "Which game? Say I'm playing, then the name.")
             notes.add(g, arg)
             return self.say(q, 'Noted.')
+        if action == 'unnote':
+            gone = g and notes.forget_learned(g)
+            return self.say(q, f'Forgot the note: {gone}.' if gone else 'There was no learned note to forget.')
         if action == 'spoil':
             if not self.last_q:
                 self.spoil_next = True
@@ -321,7 +324,7 @@ class App:
         finally:
             for path, _ in shots:
                 _rm(path)
-        a, learned = brain.split_note(a)
+        a, learned = brain.split_note(a, q)
         if learned and self.game:
             notes.add(self.game, learned + ' (learned)')
         if gen != self.gen:
@@ -333,7 +336,7 @@ class App:
             self.voice.stop()   # what was spoken was not the answer after all
         self.voice.say(' '.join(rest))
         if self.box:
-            self.box.show(q, a)
+            self.box.show(q, a + (f'\n\nNoted: {learned}. Say "forget that note" if it\'s wrong.' if learned and self.game else ''))   # seen, never spoken
         if self.listener.on:
             self.after_speaking()
         self.last, self.last_q = a, q
@@ -727,7 +730,7 @@ def main():
         wiki = '\n\n'.join(x for x in (romm.context(g, q), lookup.wiki(q, g and g['name'], folder=notes.FOLDER, progress=notes.read(g, 3))) if x)
         print(f'(wiki {len(wiki)} chars in {time.time() - t:.1f}s)')
         a, usd = brain.ask(p, brain.request(q, g, notes.read(g), [], wiki, gear.text(g) if gear.wants(q) else ''))
-        a, learned = brain.split_note(a)
+        a, learned = brain.split_note(a, q)
         if learned and g:
             notes.add(g, learned + ' (learned)')
         return print(f'{a}\n({brain.name(cfg)}, ${usd:.4f}, {time.time() - t:.1f}s)' + (f'\n[noted: {learned}]' if learned else ''))

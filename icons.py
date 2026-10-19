@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 from PIL import Image, ImageFilter
-import lookup, rag
+import brain, lookup, rag
 
 URL = 'https://lorekeeper-cgv.pages.dev/cartridges.json'
 BUNDLED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'cartridges.json')
@@ -606,4 +606,4 @@ def text(img, game, folder, question=''):
         pages = list(ex.map(lambda n: (r['lore'] and rag.entry(game['name'], r['lore'], n)) or lookup.page(f"https://{r['host']}/wiki/" + urllib.parse.quote(n.replace(' ', '_')), question, 1200), names))
     return ('On screen, read from their icons (exact names; trust these over the screenshot): '
             + '; '.join(f"{k}: {', '.join(ns)}" for k, ns in by.items())
-            + ''.join(f'\n\n{n} (wiki):\n{p}' for n, p in zip(names, pages) if p))
+            + ''.join(f'\n\n{n} (wiki):\n' + brain.fence(p, n) for n, p in zip(names, pages) if p))   # our label stays outside the fence

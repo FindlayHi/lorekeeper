@@ -56,7 +56,7 @@ def main():
         wiki = '' if shots else lookup.wiki(s['q'], g['name'], folder=notes.FOLDER, progress=notes.read(g, 3))
         p = brain.start('sonnet' if s.get('gear') else 'haiku')
         a, usd = brain.ask(p, brain.request(s['q'], g, notes.read(g), [], wiki, gear.text(g) if s.get('gear') else ''), shots)
-        a, _ = brain.split_note(a)
+        a, _ = brain.split_note(a, s['q'])
         print(f"{s['game']}: {a}  (${usd:.4f}, {time.time() - t:.1f}s)", flush=True)
         out.append({'game': s['game'], 'q': s['q'], 'a': a, 'secs': round(time.time() - t, 1), 'usd': usd})
     out.append({'game': 'Any game', 'q': 'Clip it.', 'a': 'Clipped. The last thirty seconds are saved.', 'clip': True})
