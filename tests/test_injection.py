@@ -155,3 +155,11 @@ def test_start_passes_the_guard_only_with_web_search(monkeypatch):
     assert '--settings' in got[0] and '--settings' not in got[1]
     settings = json.load(open(got[0][got[0].index('--settings') + 1]))
     assert settings['hooks']['PreToolUse'][0]['hooks'][0]['command'] == brain.guard_command()[0]
+
+
+def test_an_earlier_answer_cannot_clear_the_notes_for_a_search():
+    leak = 'Lives in the house on Maple Street account'
+    keep = brain.private('where is that', {'name': 'Stardew Valley'}, NOTES, [{'q': 'who is the mayor', 'a': leak}])
+    assert 'notes' in searchguard.check(leak, keep['private'], keep['allowed'])
+    keep = brain.private('where is that', {'name': 'Stardew Valley'}, NOTES, [{'q': 'I live in the house on Maple Street account', 'a': 'x'}])
+    assert searchguard.check(leak, keep['private'], keep['allowed']) == ''   # the player said it

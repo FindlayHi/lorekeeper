@@ -181,8 +181,9 @@ def guard_settings(claude):
 
 def private(question, game, notes='', turns=(), gear=''):
     """What the search guard keeps out of search queries: the notes and gear sent with the question. Allowed: what the player
-    said (this question and the last few) and the game, even where it overlaps the notes."""
-    return {'allowed': '\n'.join([question, game['name'] if game else ''] + [f"{t['q']}\n{t['a']}" for t in turns]),
+    said (this question and the last few) and the game, even where it overlaps the notes. Not the answers: a steered answer
+    could quote the notes and so clear them for the next search."""
+    return {'allowed': '\n'.join([question, game['name'] if game else ''] + [t['q'] for t in turns]),
             'private': '\n'.join(x for x in (notes, gear) if x)}
 
 
