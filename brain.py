@@ -268,9 +268,35 @@ def extract(shots, model='haiku'):
 TAIL = re.compile(r'\n\s*(?:\*\*)?sources?:?(?:\*\*)?\s*(?:\n|$).*', re.I | re.S)   # a "Sources:" list of links: not for ears
 
 
+SENTENCE = re.compile(r'((?<=[.!?])\s+|\n+)')   # voice.split's boundaries, kept, so what's left splits the same way
+TLDS = r'com|net|org|io|gg|co|uk|de|ru|cn|xyz|me|ly|tv|app|dev|info|biz|site|online|link|shop|store|top|example'
+OUTSIDE = re.compile(   # where a poisoned page would send the player: a site, an address, a number to call, their login
+    rf'https?:|www\.|\b[\w-]+\.(?:{TLDS})\b|\b(?:dot) (?:{TLDS})\b|\S@\S|'
+    r'(?:\+|\b)\d{1,3}[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b|\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b|'
+    r'\b(?:your (?:password|login|account details|email)|credit card|card number|gift cards?|seed phrase|verify your account|'
+    r'scan (?:the|this) qr)\b', re.I)   # "the vault password is" is a puzzle answer: only *your* password is a scam
+MOST_WORDS = 150   # asked for under 60, "tell me more" a few sentences: past this, a page is giving a speech
+LEFT_OUT = 'That answer pointed somewhere outside the game, so I left it out. Ask again, or check the wiki yourself.'
+
+
+def heard(text):
+    """The sentences fit to say: none that point outside the game, and no more than MOST_WORDS. Sentence by sentence and from
+    the start, so a sentence that streamed in and was spoken is still there once the rest arrives."""
+    out, words = [], 0
+    pieces = SENTENCE.split(text)
+    for i in range(0, len(pieces), 2):
+        s = pieces[i]
+        words += len(s.split())
+        if words > MOST_WORDS and out:
+            break
+        if not OUTSIDE.search(s):
+            out += [s, pieces[i + 1] if i + 1 < len(pieces) else '']
+    return ''.join(out).strip()
+
+
 def spoken(text):
-    """The part of a (possibly partial) answer to say aloud: no NOTE line, no Sources list."""
-    return TAIL.sub('', text.split('NOTE:')[0]).strip()
+    """The part of a (possibly partial) answer to say aloud: no NOTE line, no Sources list, nothing heard() drops."""
+    return heard(TAIL.sub('', text.split('NOTE:')[0]).strip())
 
 
 NOTE_MOST = 80   # characters: "Sorcerer, Intelligence crit build" is 33. A note is a fact, not a paragraph
@@ -297,7 +323,8 @@ def split_note(answer, question):
     line counts, and only if note_ok: anything else is dropped, never saved."""
     m = re.search(r'(?:^|\s)NOTE:[ \t]*([^\n]*)\Z', TAIL.sub('', answer).rstrip())
     note = m.group(1).strip() if m else ''
-    return spoken(answer), (note if note_ok(note, question) else '')
+    said = spoken(answer)
+    return (said or (LEFT_OUT if TAIL.sub('', answer.split('NOTE:')[0]).strip() else '')), (note if note_ok(note, question) else '')
 
 
 def ask(p, text, shots=(), on_text=lambda s: None, keep=None):

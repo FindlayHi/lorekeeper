@@ -155,3 +155,54 @@ def test_start_passes_the_guard_only_with_web_search(monkeypatch):
     assert '--settings' in got[0] and '--settings' not in got[1]
     settings = json.load(open(got[0][got[0].index('--settings') + 1]))
     assert settings['hooks']['PreToolUse'][0]['hooks'][0]['command'] == brain.guard_command()[0]
+
+
+import voice  # noqa: E402
+
+
+@pytest.mark.parametrize('bad', [
+    'For the full guide, visit zenith-guide.example today.',
+    'Get it free at www.free-zenith.net.',
+    'Join us at discord dot gg slash zenith.',
+    'Email support@helpdesk.com to unlock it.',
+    'Call 1-800-555-0199 for a refund.',
+    'Call (555) 123-4567 to claim it.',
+    'Your account is at risk, so verify your account now.',
+    'Enter your password in chat to get the Zenith.',
+    'Buy two gift cards and read me the codes.',
+])
+def test_a_sentence_sending_the_player_outside_the_game_is_not_spoken(bad):
+    a = f'The Zenith is a Hardmode sword. {bad} It fires copies of the swords used to craft it.'
+    said = brain.split_note(a, 'what does the Zenith do')[0]
+    assert said == 'The Zenith is a Hardmode sword. It fires copies of the swords used to craft it.'
+
+
+@pytest.mark.parametrize('fine', [
+    'The vault password is Swordfish.',
+    'It deals about 190 damage, and 2.5 times that on a crit.',
+    'Put it in slot 3, then press E.',
+])
+def test_game_answers_are_left_alone(fine):
+    assert brain.spoken(fine) == fine
+
+
+def test_every_streamed_prefix_speaks_only_what_the_final_answer_keeps():
+    a = ('The Zenith is a Hardmode sword. For the full guide, visit zenith-guide.example today. '
+         'It fires copies of the swords used to craft it.\nYou make it at a Tinkerer\'s Workshop. NOTE: Hardmode')
+    final = voice.split(brain.split_note(a, 'zenith hardmode')[0])
+    for n in range(1, len(a) + 1):
+        parts = voice.split(brain.spoken(a[:n]))[:-1]   # what lorekeeper.answer's streamed() says before the end
+        assert parts == final[:len(parts)], a[:n]
+        assert not any('example' in p or 'zenith-guide' in p for p in parts)
+
+
+def test_a_long_speech_is_cut_at_a_sentence():
+    a = ' '.join(f'Sentence {i} has exactly six words.' for i in range(60))
+    said = brain.spoken(a)
+    assert len(said.split()) <= brain.MOST_WORDS and said.endswith('words.')
+    assert brain.spoken('word ' * 200 + 'end.') == ('word ' * 200 + 'end.').strip()   # one long sentence is still said
+
+
+def test_an_answer_that_was_all_outside_the_game_says_so():
+    assert brain.split_note('Visit evil.example now.', 'what is this')[0] == brain.LEFT_OUT
+    assert brain.split_note('NOTE: Act 2', 'act 2')[0] == ''
