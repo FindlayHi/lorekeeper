@@ -313,7 +313,7 @@ class App:
         def streamed(s):   # speak each sentence as it completes; the last, maybe partial, waits
             if gen != self.gen:
                 return
-            s = brain.spoken(s)   # the saved note and any Sources list are never spoken
+            s = brain.spoken(s, self.game and self.game['name'] or '')   # the saved note and any Sources list are never spoken
             parts = voice.split(s)[:-1]
             if parts[:len(spoken)] != spoken:
                 return   # a new message began (text before a search): wait for the result
@@ -327,7 +327,7 @@ class App:
         finally:
             for path, _ in shots:
                 _rm(path)
-        a, learned = brain.split_note(a, q)
+        a, learned = brain.split_note(a, q, self.game and self.game['name'] or '')
         if learned and self.game:
             notes.add(self.game, learned + ' (learned)')
         if gen != self.gen:
@@ -752,7 +752,7 @@ def main():
         print(f'(wiki {len(wiki)} chars in {time.time() - t:.1f}s)')
         kit = gear.text(g) if gear.wants(q) else ''
         a, usd = brain.ask(p, brain.request(q, g, notes.read(g), [], wiki, kit), keep=brain.private(q, g, notes.read(g), [], kit))
-        a, learned = brain.split_note(a, q)
+        a, learned = brain.split_note(a, q, g and g['name'] or '')
         if learned and g:
             notes.add(g, learned + ' (learned)')
         return print(f'{a}\n({brain.name(cfg)}, ${usd:.4f}, {time.time() - t:.1f}s)' + (f'\n[noted: {learned}]' if learned else ''))

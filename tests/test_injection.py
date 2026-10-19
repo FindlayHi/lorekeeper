@@ -206,3 +206,8 @@ def test_a_long_speech_is_cut_at_a_sentence():
 def test_an_answer_that_was_all_outside_the_game_says_so():
     assert brain.split_note('Visit evil.example now.', 'what is this')[0] == brain.LEFT_OUT
     assert brain.split_note('NOTE: Act 2', 'act 2')[0] == ''
+
+
+def test_a_game_named_like_a_site_is_still_talked_about():
+    a = 'In Hole.io you grow by swallowing things. Visit holehelp.io for skins.'
+    assert brain.split_note(a, 'how do I grow', 'Hole.io')[0] == 'In Hole.io you grow by swallowing things.'

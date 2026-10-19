@@ -279,24 +279,26 @@ MOST_WORDS = 150   # asked for under 60, "tell me more" a few sentences: past th
 LEFT_OUT = 'That answer pointed somewhere outside the game, so I left it out. Ask again, or check the wiki yourself.'
 
 
-def heard(text):
+def heard(text, game=''):
     """The sentences fit to say: none that point outside the game, and no more than MOST_WORDS. Sentence by sentence and from
-    the start, so a sentence that streamed in and was spoken is still there once the rest arrives."""
+    the start, so a sentence that streamed in and was spoken is still there once the rest arrives.
+    game: its name may look like a site ("Hole.io") and is never the reason a sentence is dropped."""
     out, words = [], 0
+    name = re.compile(re.escape(game), re.I) if game else None
     pieces = SENTENCE.split(text)
     for i in range(0, len(pieces), 2):
         s = pieces[i]
         words += len(s.split())
         if words > MOST_WORDS and out:
             break
-        if not OUTSIDE.search(s):
+        if not OUTSIDE.search(name.sub('', s) if name else s):
             out += [s, pieces[i + 1] if i + 1 < len(pieces) else '']
     return ''.join(out).strip()
 
 
-def spoken(text):
+def spoken(text, game=''):
     """The part of a (possibly partial) answer to say aloud: no NOTE line, no Sources list, nothing heard() drops."""
-    return heard(TAIL.sub('', text.split('NOTE:')[0]).strip())
+    return heard(TAIL.sub('', text.split('NOTE:')[0]).strip(), game)
 
 
 NOTE_MOST = 80   # characters: "Sorcerer, Intelligence crit build" is 33. A note is a fact, not a paragraph
@@ -318,12 +320,12 @@ def note_ok(note, question):
             and bool(_note_words(note) & _note_words(question)))
 
 
-def split_note(answer, question):
+def split_note(answer, question, game=''):
     """(spoken part, note or '') from an answer that may end with "NOTE: …" and a Sources list. Only a note on the last
     line counts, and only if note_ok: anything else is dropped, never saved."""
     m = re.search(r'(?:^|\s)NOTE:[ \t]*([^\n]*)\Z', TAIL.sub('', answer).rstrip())
     note = m.group(1).strip() if m else ''
-    said = spoken(answer)
+    said = spoken(answer, game)
     return (said or (LEFT_OUT if TAIL.sub('', answer.split('NOTE:')[0]).strip() else '')), (note if note_ok(note, question) else '')
 
 
