@@ -46,11 +46,12 @@ def valid(doc):
         try:
             sets = [{'kind': s['kind'], 'prefix': s['prefix'], 'shape': s['shape'], 'regions': _regions(s.get('regions', [])),
                      'needs': s['needs'] if re.fullmatch(r'[a-z -]{2,30}', str(s.get('needs', ''))) else ''}
-                    for s in r['sets'] if s['shape'] in SHAPES and PREFIX.fullmatch(s['prefix']) and re.fullmatch(r'[a-z -]{2,30}', s['kind'])]
-            if HOST.fullmatch(r['host']) and sets:
+                    for s in r.get('sets', []) if s['shape'] in SHAPES and PREFIX.fullmatch(s['prefix']) and re.fullmatch(r'[a-z -]{2,30}', s['kind'])]
+            lore = rag.pointer(r.get('lore'))
+            if HOST.fullmatch(r['host']) and (sets or lore):   # a game whose HUD labels things in text has no icons to read, only lore
                 out[name.lower()] = {'host': r['host'], 'sets': sets, 'asks': [a for a in r.get('asks', []) if re.fullmatch(r'[a-z -]{2,30}', a)],
-                                   'lore': rag.pointer(r.get('lore'))}
-        except (KeyError, TypeError):
+                                   'lore': lore}
+        except (KeyError, TypeError, AttributeError):
             pass
     return out
 
@@ -588,7 +589,7 @@ def text(img, game, folder, question=''):
     """For the question: what's on screen, read from its icons, and each thing's entry in the game's lore pack, else its wiki page;
     or why not, or ''."""
     r = cart(game, folder)
-    if not r or img is None:
+    if not r or not r['sets'] or img is None:
         return ''
     bs = banks(game, folder)
     if not bs:

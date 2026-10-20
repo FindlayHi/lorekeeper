@@ -13,7 +13,7 @@ kept = icons.valid(doc)
 for name, raw in doc.get('games', {}).items():
     got = kept.get(name.lower())
     if not got:
-        print(f'{name}: dropped whole (host must be *.wiki.gg or *.fandom.com, and at least one good set)'); ok = False
+        print(f'{name}: dropped whole (host must be *.wiki.gg or *.fandom.com, and at least one good icon set or a lore pointer)'); ok = False
         continue
     kinds = {s['kind']: s for s in got['sets']}
     for s in raw.get('sets', []):
@@ -23,6 +23,7 @@ for name, raw in doc.get('games', {}).items():
         elif len(kinds[k]['regions']) != len(s.get('regions', [])):
             print(f'{name}: {k}: {len(s["regions"]) - len(kinds[k]["regions"])} region(s) dropped (anchor tl|tr|bl|br, '
                   'x/y as [near, far] in screen heights, size 0.01-0.3, screen a-z)'); ok = False
-    print(f"{name}: {', '.join(f'{k} ({len(v['regions'])} regions)' for k, v in kinds.items())}")
+    print(f"{name}: {', '.join(f'{k} ({len(v['regions'])} regions)' for k, v in kinds.items()) or 'no icon sets'}"
+          + (f", lore {got['lore']['file']}" if got['lore'] else ''))
 print('ok' if ok else 'NOT ok')
 sys.exit(0 if ok else 1)

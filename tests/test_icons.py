@@ -107,6 +107,22 @@ def test_carts_shipped_match_the_site_and_bad_ones_are_dropped():
     assert icons.valid('nope') == {} and icons.valid({'games': {'E': None}}) == {}
 
 
+def test_a_cart_can_be_lore_only():
+    """A game that labels its gear in text (Borderlands) has no icons to read, but its lore pack still counts."""
+    lore = {'file': 'lore/borderlands-3.zip', 'sha256': 'a' * 64, 'version': 1}
+    got = icons.valid({'games': {'Borderlands 3': {'host': 'borderlands.fandom.com', 'lore': lore},
+                                 'Empty': {'host': 'e.fandom.com', 'sets': []},
+                                 'Bad lore': {'host': 'b.fandom.com', 'lore': {'file': '../x.zip', 'sha256': 'a' * 64}}}})
+    assert list(got) == ['borderlands 3'] and got['borderlands 3']['sets'] == [] and got['borderlands 3']['lore']['file'] == lore['file']
+    icons._carts = got
+    try:
+        bl3 = {'name': 'Borderlands 3'}
+        assert icons.text(Image.new('RGB', (64, 36)), bl3, tempfile.mkdtemp()) == ''   # nothing to read, and nothing 'still downloading'
+        assert not icons.asks('what perks do I have', bl3, tempfile.mkdtemp())
+    finally:
+        icons._carts = None
+
+
 def sand(seed=0):
     """A sandy screen: bright, coloured, textured everywhere (where slots lose their coloured edge)."""
     rng = np.random.default_rng(seed)
