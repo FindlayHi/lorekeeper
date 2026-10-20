@@ -3,7 +3,7 @@
 Writes lore/<slug>/chunks.jsonl and quarantine.json. A chunk that looks like it is talking to the model (or hides
 something) is left out until a person reads it and lists its hash under "approved" in lore/<slug>/reviewed.json.
 Chunks are ~100-300 words, with the infobox (stats) as a chunk of its own."""
-import hashlib, os, re, sys, time
+import hashlib, os, re, sys, time, urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 from htmltext import html_text
@@ -138,16 +138,24 @@ def make(title, section, text, url, kind, fetched, rev):
             'text': text, 'kind': kind, 'fetched': fetched, 'rev': rev, 'hash': h}
 
 
-def user_chunks(s):
-    """A player's own folder of md/txt guides -> chunks (url 'local:<file>')."""
+def user_chunks(s, skip=()):
+    """A folder of md/txt guides -> chunks. A player's own: url 'local:<file>'. A guide Lorekeeper publishes ("kind": "guide"):
+    url <its url><file>, titled by the file's '# ' heading, and its sections in skip (its list of sources) left out."""
     now = time.strftime('%Y-%m-%d')
+    guide = s.get('kind') == 'guide'
     for name in sorted(os.listdir(s['folder'])):
         if name.lower().endswith(('.md', '.txt')):
             with open(os.path.join(s['folder'], name), encoding='utf-8', errors='replace') as f:
                 text = f.read()
+            title = name
+            if guide:
+                h1 = re.search(r'(?m)^# +(.+?)\s*$', text)
+                title = h1[1] if h1 else name
+                text = text[:h1.start()] + text[h1.end():] if h1 else text
             text = re.sub(r'(?m)^#{1,4}\s*(.+?)\s*#*$', lambda m: f'== {m[1]} ==', text)
-            for sec, t in chunks_of(name, sections(text)):
-                yield make(name, sec, t, 'local:' + re.sub(r'[^\w .-]', '_', name)[:80], 'lore', now, 0)
+            url = s['url'] + urllib.parse.quote(name) if guide else 'local:' + re.sub(r'[^\w .-]', '_', name)[:80]
+            for sec, t in chunks_of(title, sections(text, skip if guide else ())):
+                yield make(title, sec, t, url, 'build' if guide else 'lore', now, 0)
 
 
 ENTITY_CHARS = 2500
@@ -218,8 +226,8 @@ def run(game):
                 admit(h, body, p['title'], 'entry', p['url'], lambda p=p, body=body, names=names, h=h: ents.append(
                     {'name': p['title'], 'kind': p['kind'], 'aliases': names, 'text': body, 'url': p['url'], 'fetched': p['fetched'], 'rev': p['revid'], 'hash': h}))
     for s in doc['sources']:
-        if s.get('kind') == 'user':
-            allc += list(user_chunks(s))
+        if s.get('kind') in ('user', 'guide'):
+            allc += list(user_chunks(s, skip))
     for c in allc:
         if c['hash'] in seen:
             continue

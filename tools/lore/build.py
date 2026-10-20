@@ -15,7 +15,7 @@ def manifest(game, doc, chunks, version, build, trust, ents=()):
         by.setdefault(host, set()).add(c['title'])
     out = []
     for s in doc['sources']:
-        host = s.get('host') or 'local'
+        host = source_host(s)
         out.append({'id': host, 'host': host, 'kind': s.get('kind', 'wiki'), 'license': s['license'], 'terms': s.get('terms', ''),
                     'pages': len(by.get(host, ())), 'fetchedAt': max([c['fetched'] for c in chunks if host in c['url'] or host == 'local'] or [''])})
     return {'schema': 1, 'game': game, 'version': version, 'trust': trust, 'builtAt': time.strftime('%Y-%m-%d'), 'steamAppId': doc.get('steamAppId', 0),

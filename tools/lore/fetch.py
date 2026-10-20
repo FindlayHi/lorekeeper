@@ -149,7 +149,7 @@ if __name__ == '__main__':
     elif os.path.exists(raw):
         os.remove(raw)
     for s in doc['sources']:
-        if s.get('kind') == 'user':
+        if s.get('kind') in ('user', 'guide'):   # written, not fetched
             continue
         for sd in s['seeds']:
             try:

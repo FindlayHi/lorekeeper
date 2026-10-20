@@ -234,3 +234,30 @@ def test_a_seed_keeps_only_pages_also_in_its_categories(monkeypatch):
     src = {'host': 'borderlands.fandom.com', 'via': 'api'}
     assert fetch.titles(src, {'category': 'Bosses', 'in': ['Borderlands 3 characters']}, 100) == ['Killavolt', 'Mouthpiece']
     assert fetch.titles(src, {'category': 'Bosses', 'limit': 1}, 100) == ['Killavolt']
+
+
+def test_a_written_guide_ships_with_its_published_address(tmp_path):
+    host = 'testgame.wiki.gg'
+    w = tmp_path / 'lore' / 'test-game'
+    (w / 'guides').mkdir(parents=True)
+    (w / 'guides' / 'vault-cards.md').write_text('# Vault Card farming\n\n## Vault Card daily: Psycho kills\n\nThe Slaughter Shaft on Pandora sends '
+                                                 'wave after wave of Psychos.\n\n## Sources\n\n- https://guides.example/vault-cards\n', encoding='utf-8')
+    guide = {'kind': 'guide', 'folder': str(w / 'guides'), 'url': 'https://github.com/FindlayHi/lorekeeper/blob/main/lore/test-game/guides/',
+             'license': 'own: Lorekeeper contributors', 'terms': 'Written 2026-10-19 from two cited guides, in our own words'}
+    doc = {'game': 'Test Game', 'sources': [{'host': host, 'license': 'CC BY-SA 3.0', 'terms': 'Read 2026-10-12; CC BY-SA text, attribution required',
+                                             'seeds': [{'category': 'x', 'kind': 'mechanic'}], 'skipSections': ['Sources']}, guide]}
+    assert common.problems(doc) == [] and common.hosts(doc) == {host, 'github.com'}
+    assert common.problems({'sources': [dict(guide, url='http://x.example/')]}) and common.problems({'sources': [dict(guide, license='mine')]})
+    json.dump(doc, open(w / 'sources.json', 'w'))
+    for d in ('assets', 'docs'):
+        os.makedirs(tmp_path / d, exist_ok=True)
+        json.dump({'games': {'Test Game': {'host': host}}}, open(tmp_path / d / 'cartridges.json', 'w'))
+    r = tool(tmp_path, 'clean.py', 'Test Game')
+    assert r.returncode == 0 and json.load(open(w / 'quarantine.json')) == [], r.stdout + r.stderr   # its sources' links are left out, not held
+    got = [json.loads(x) for x in open(w / 'chunks.jsonl').read().splitlines()]
+    assert [(c['title'], c['section'], c['kind']) for c in got] == [('Vault Card farming', 'Vault Card daily: Psycho kills', 'build')]
+    assert got[0]['url'].endswith('/guides/vault-cards.md') and 'guides.example' not in got[0]['text']
+    r = tool(tmp_path, 'build.py', 'Test Game', '--apply')
+    assert r.returncode == 0, r.stdout + r.stderr
+    import rag
+    assert rag.load(open(tmp_path / 'docs' / 'lore' / 'test-game.zip', 'rb').read())['chunks'][0]['url'].startswith('https://github.com/')
