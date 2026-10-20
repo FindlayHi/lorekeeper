@@ -145,8 +145,8 @@
    "host": "borderlands.fandom.com",
    "lore": {
     "file": "lore/borderlands-3.zip",
-    "sha256": "0ebca23fa7eed7b40c3a9ec1085ec962080be065e9c359e95213fed6a9be495a",
-    "version": 1,
+    "sha256": "59dd9c28b3f273958e9d7ac943f8836eae36a75965463a098f5296711a38379b",
+    "version": 2,
     "builtForBuild": ""
    }
   }

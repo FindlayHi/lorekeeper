@@ -30,29 +30,18 @@
    "seeds": [
     {
      "category": "Weapons in Borderlands 3",
-     "in": [
-      "Legendary",
-      "Unique"
-     ],
      "kind": "item",
-     "limit": 600
+     "limit": 800
     },
     {
      "category": "Shields in Borderlands 3",
-     "in": [
-      "Legendary",
-      "Unique"
-     ],
      "kind": "item",
-     "limit": 100
+     "limit": 150
     },
     {
      "category": "Class Mods in Borderlands 3",
-     "in": [
-      "Legendary"
-     ],
      "kind": "item",
-     "limit": 100
+     "limit": 150
     },
     {
      "linkedFrom": "List of grenade mods in Borderlands 3",
@@ -81,9 +70,114 @@
      "limit": 300
     },
     {
+     "linkedFrom": "Legendary (Borderlands 3)",
+     "in": [
+      "Enemies",
+      "Bosses"
+     ],
+     "kind": "boss",
+     "limit": 200
+    },
+    {
+     "linkedFrom": "Unique (Borderlands 3)",
+     "in": [
+      "Enemies",
+      "Bosses"
+     ],
+     "kind": "boss",
+     "limit": 200
+    },
+    {
+     "linkedFrom": "Legendary Hunt",
+     "in": [
+      "Enemies",
+      "Bosses"
+     ],
+     "kind": "boss",
+     "limit": 100
+    },
+    {
+     "category": "Borderlands 3 missions",
+     "kind": "quest",
+     "limit": 200
+    },
+    {
+     "category": "Moxxi's Heist of the Handsome Jackpot missions",
+     "kind": "quest",
+     "limit": 200
+    },
+    {
+     "category": "Guns, Love, and Tentacles missions",
+     "kind": "quest",
+     "limit": 200
+    },
+    {
+     "category": "Bounty of Blood missions",
+     "kind": "quest",
+     "limit": 200
+    },
+    {
+     "category": "Psycho Krieg and the Fantastic Fustercluck missions",
+     "kind": "quest",
+     "limit": 200
+    },
+    {
+     "category": "Director's Cut missions",
+     "kind": "quest",
+     "limit": 200
+    },
+    {
+     "category": "Enemies",
+     "in": [
+      "Borderlands 3 characters"
+     ],
+     "kind": "mechanic",
+     "limit": 700
+    },
+    {
      "category": "Borderlands 3 locations",
      "kind": "lore",
      "limit": 80
+    },
+    {
+     "category": "Guns, Love, and Tentacles locations",
+     "kind": "lore",
+     "limit": 60
+    },
+    {
+     "category": "Bounty of Blood locations",
+     "kind": "lore",
+     "limit": 60
+    },
+    {
+     "category": "Moxxi's Heist of the Handsome Jackpot locations",
+     "kind": "lore",
+     "limit": 60
+    },
+    {
+     "category": "Psycho Krieg and the Fantastic Fustercluck locations",
+     "kind": "lore",
+     "limit": 60
+    },
+    {
+     "category": "Director's Cut locations",
+     "kind": "lore",
+     "limit": 60
+    },
+    {
+     "category": "Designer's Cut locations",
+     "kind": "lore",
+     "limit": 60
+    },
+    {
+     "category": "Bloody Harvest locations",
+     "kind": "lore",
+     "limit": 60
+    },
+    {
+     "category": "Revenge of the Cartels locations",
+     "kind": "lore",
+     "limit": 60
     },
     {
      "pages": [
@@ -106,6 +200,22 @@
       "True Trial"
      ],
      "kind": "mechanic"
+    },
+    {
+     "pages": [
+      "Revenge of the Cartels",
+      "Bloody Harvest",
+      "Bloody Harvest Returns",
+      "Eridium Cartel"
+     ],
+     "kind": "mechanic"
+    },
+    {
+     "pages": [
+      "Revenge of the Cartels: Ultraviolet Nights",
+      "Locked in Here with Me"
+     ],
+     "kind": "quest"
     }
    ],
    "skipSections": [
@@ -120,16 +230,22 @@
     "External Links",
     "External links",
     "Trivia",
-    "Quotes"
+    "Quotes",
+    "Borderlands",
+    "Borderlands 2",
+    "Borderlands: The Pre-Sequel",
+    "Borderlands: The Pre-Sequel!",
+    "Tiny Tina's Wonderlands",
+    "Borderlands 4",
+    "Tales from the Borderlands",
+    "New Tales from the Borderlands"
    ],
    "entityKinds": [
     "item",
     "boss"
    ],
    "entitySkipSections": [
-    "Involvement",
     "Appearances",
-    "Strategy",
     "Usage & Description",
     "Usage and Description",
     "Notable Variants",
@@ -138,8 +254,7 @@
     "Personality"
    ],
    "dropLines": [
-    "^Provided by: Fandom$",
-    "^Main article: .*$"
+    "^Provided by: Fandom$"
    ],
    "aliases": {
     "Projectile Recursion": [
@@ -162,11 +277,32 @@
     ],
     "Vermivorous the Invincible": [
      "Vermivorous"
+    ],
+    "Hex": [
+     "Hex"
+    ],
+    "AAA": [
+     "AAA"
+    ],
+    "EMP": [
+     "EMP"
+    ],
+    "Coffe Commander": [
+     "Coffee Commander"
     ]
    },
    "rowsFrom": [
     "Legendary (Borderlands 3)",
     "Unique (Borderlands 3)"
+   ],
+   "entityLastSections": [
+    "Strategy",
+    "Involvement"
+   ],
+   "mentionsFrom": [
+    "lore",
+    "quest",
+    "mechanic"
    ]
   },
   {
@@ -174,7 +310,7 @@
    "folder": "lore/borderlands-3/guides",
    "url": "https://github.com/FindlayHi/lorekeeper/blob/main/lore/borderlands-3/guides/",
    "license": "own: Lorekeeper contributors",
-   "terms": "Written 2026-10-19 in our own words from three published guides (MentalMars, KosGames, Game Rant), each farm spot backed by at least one of them; the guides are listed in the file's Sources section, which is left out of the pack.",
+   "terms": "Written 2026-10-19 in our own words from four published guides (MentalMars, Saul Tink's Steam guide, Game Rant, Newsweek), each farm spot backed by at least one of them and every place checked against the wiki's entries; the guides are listed in the file's Sources section, which is left out of the pack.",
    "skipSections": [
     "Sources"
    ]

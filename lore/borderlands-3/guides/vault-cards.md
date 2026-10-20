@@ -6,7 +6,7 @@ Vault Cards came with the Director's Cut add-on. There are three: Vault Card 1 (
 
 ## Vault Card challenge: kills with an element, a manufacturer or a weapon type
 
-Challenges such as "kill enemies with shock damage", "kill enemies with Jakobs weapons" or "kill enemies with a shotgun" count anywhere, so go where enemies are packed close and respawn. Lectra City on Promethea is the usual suggestion, and the Trials on Sanctuary 3 and the Circles of Slaughter (Slaughter Shaft, Cistern of Slaughter, Slaughterstar 3000) work too: equip the right element, brand or gun type and run waves.
+Challenges such as "kill enemies with shock damage", "kill enemies with Jakobs weapons" or "kill enemies with a shotgun" count anywhere, so go where enemies are packed close and respawn. Lectra City on Promethea is the usual suggestion, and the Trials on Sanctuary 3 and the Circles of Slaughter (Slaughter Shaft, Cistern of Slaughter, Slaughterstar 3000) work too, as does the Claptrap Nest in the Moxxi's Heist of the Handsome Jackpot add-on: equip the right element, brand or gun type and run waves.
 
 ## Vault Card challenge: vehicle kills
 
@@ -28,12 +28,12 @@ Badasses turn up in every wave-based arena. Any Circle of Slaughter (Slaughter S
 - Skags and Rakk: The Droughts on Pandora.
 - Spiderants: Devil's Razor on Pandora, around where Antalope spawns.
 - Varkids: Konrad's Hold on Pandora, near Manvark, or the Cistern of Slaughter on Promethea.
-- Goliaths: The Splinterlands on Pandora, where Road Dog spawns.
+- Goliaths: The Splinterlands on Pandora, where Road Dog spawns, or Jakobs Estate on Eden-6.
 - Hags: Konrad's Hold on Pandora.
 
 ## Vault Card challenge: kill Saurians, Jabbers, Ratch, Service Bots and Maliwan Mechs
 
-- Saurians: the Cistern of Slaughter on Promethea.
+- Saurians: the Cistern of Slaughter on Promethea, or the Voracious Canopy on Eden-6.
 - Jabbers: the Cistern of Slaughter, the Trial of Instinct, or Ambermire on Eden-6 near Red Jabber.
 - Ratch: Meridian Outskirts (the first area) or Meridian Metroplex on Promethea, or the Maliwan Takedown at Midnight's Cairn.
 - Service Bots: Lectra City or Meridian Metroplex on Promethea.
@@ -61,7 +61,7 @@ A daily can ask for one named enemy. Where the common ones are:
 - Captain Traunt: Athenas, at the far end of the map past the long bridge.
 - Troy Calypso: The Great Vault on Pandora. Tyreen Calypso: Destroyer's Rift on Pandora.
 - The Valkyries: the Maliwan Takedown at Midnight's Cairn.
-For a challenge to kill many bosses, kill one quick boss over and over (Shiv is the usual example).
+For a challenge to kill many bosses, kill one quick boss over and over: Shiv (Covenant Pass on Pandora) and Gigamind (Meridian Metroplex on Promethea) are the fastest.
 
 ## Vault Card challenge: complete a Trial or a Circle of Slaughter
 
@@ -70,11 +70,17 @@ For a challenge to kill many bosses, kill one quick boss over and over (Shiv is 
 
 ## Vault Card challenge: kills on a planet or against a faction
 
-- Kill COV, or kill enemies on Pandora: the Slaughter Shaft.
+- Kill COV: the Slaughter Shaft on Pandora.
 - Kill Maliwan: Athenas.
-- Kill enemies on Promethea: the Cistern of Slaughter.
 - Kill Guardians: the Guardian Takedown on Minos Prime.
-The guides used here give no particular spot for Eden-6 or Nekrotafeyo: any busy area there will do.
+- Kill enemies on Pandora: the Slaughter Shaft, or The Droughts if you don't have it.
+- Kill enemies on Promethea: the Cistern of Slaughter.
+- Kill enemies on Eden-6: The Anvil, which is one big farm of Badasses and Anointed; Jakobs Estate and Floodmoor Basin's COV outposts are busy too.
+- Kill enemies on Nekrotafeyo: Tazendeer Ruins.
+
+## Vault Card challenge: open red chests
+
+Stormblind Complex is the suggested place to open red chests.
 
 ## Levelling a Vault Card fast (XP)
 
@@ -82,7 +88,8 @@ A Vault Card levels from the same XP you earn anyway (kills, missions, challenge
 
 ## Sources
 
-Written for Lorekeeper in October 2026 from these guides, which agree on almost every spot:
+Written for Lorekeeper in October 2026 from these guides, which agree on almost every spot. Every place named above was also checked against the Borderlands wiki's own pages.
 - MentalMars, Borderlands 3 Vault Cards: https://mentalmars.com/borderlands-3/dlc/vault-cards/
-- KosGames, Borderlands 3: Vault Card Guide (November 2021): https://kosgames.com/borderlands-3-vault-card-guide-8767/
+- Saul Tink, Vault Card Guide, Steam Community (November 2021): https://steamcommunity.com/sharedfiles/filedetails/?id=2646292527 (also republished by KosGames: https://kosgames.com/borderlands-3-vault-card-guide-8767/)
 - Game Rant, Borderlands 3: How to Complete Vault Card Fast (April 2021): https://gamerant.com/borderlands-3-vault-card-complete-fast/
+- Newsweek, Borderlands 3 Loot the Universe Eden-6 Guide (May 2020): https://www.newsweek.com/borderlands-3-loot-universe-eden-6-drop-locations-best-farms-1502797
