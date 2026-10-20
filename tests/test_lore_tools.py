@@ -261,3 +261,18 @@ def test_a_written_guide_ships_with_its_published_address(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     import rag
     assert rag.load(open(tmp_path / 'docs' / 'lore' / 'test-game.zip', 'rb').read())['chunks'][0]['url'].startswith('https://github.com/')
+
+
+def test_an_entry_gets_the_list_rows_that_name_it():
+    text = ('Legendary items drop from many places.\n\nManufacturer | Model Name | Dropped By | Location\n\n'
+            'COV | Sawbar | Borman Nates | Meridian Outskirts\n\nCOV | Psycho Stabber | Borman Nates | Meridian Metroplex\n\n'
+            'Dahl | Barrage | Buttmunch | The Droughts\n\nAnshin | Version 0.m | Dropped by Wotan the Invincible and Valkyrie Squad\n\nSee the list.')
+    rows = clean.table_rows('Legendary (Borderlands 3)', text)
+    assert len(rows) == 4 and all(h.startswith('Manufacturer |') for _, h, _ in rows)
+    got = clean.rows_naming('Borman Nates', rows)
+    assert got.splitlines() == ['From the table on Legendary (Borderlands 3):', 'Manufacturer | Model Name | Dropped By | Location',
+                                'COV | Sawbar | Borman Nates | Meridian Outskirts', 'COV | Psycho Stabber | Borman Nates | Meridian Metroplex']
+    assert 'Version 0.m' in clean.rows_naming('Wotan the Invincible', rows) and clean.rows_naming('Butt', rows) == ''
+    assert clean.rows_naming('Barrage (assault rifle)', rows).endswith('Dahl | Barrage | Buttmunch | The Droughts')
+    assert common.problems({'sources': [{'host': 'b.fandom.com', 'license': 'CC BY-SA 3.0', 'terms': 'Read 2026-10-19; CC BY-SA, attribution',
+                                         'seeds': [{'category': 'x'}], 'rowsFrom': 'Legendary'}]})

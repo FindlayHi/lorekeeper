@@ -190,6 +190,36 @@ def entity_of(title, text, skip, aliases, start=None):
     return body, sorted(set(auto) | set(aliases.get(title, [])))
 
 
+def table_rows(page_title, text):
+    """A page's table rows (lines of 3+ cells joined by ' | ', as htmltext writes them) -> [(page, header, row)]."""
+    out, head = [], None
+    for ln in text.splitlines():
+        if not ln.strip():
+            continue
+        if ln.count(' | ') < 2:
+            head = None   # prose between tables
+        elif head is None:
+            head = ln     # a table's first row names its columns
+        else:
+            out.append((page_title, head, ln))
+    return out
+
+
+def rows_naming(title, rows, most=12):
+    """The rows that name this thing in a cell (a boss in a drop list's 'Dropped By' column, with the place next to it),
+    under their table's header, as text for its entry; '' when none do."""
+    names = {title} | {m[1] for m in [QUALIFIED.fullmatch(title)] if m}
+    rx = re.compile(r'(?<![\w-])(?:' + '|'.join(re.escape(n) for n in names) + r')(?![\w-])', re.I)
+    hits = [(p, h, r) for p, h, r in rows if any(rx.search(c) for c in r.split(' | '))][:most]
+    out, last = [], None
+    for p, h, r in hits:
+        if (p, h) != last:
+            out += [f'From the table on {p}:', h]
+            last = (p, h)
+        out.append(r)
+    return '\n'.join(out)
+
+
 def run(game):
     """lore/<slug>/raw/pages.jsonl -> chunks.jsonl, entities.jsonl and quarantine.json; returns the counts."""
     doc = sources(game)
@@ -215,12 +245,17 @@ def run(game):
         else:
             put()
     allc = []
+    texts = {p['title']: drop_lines(html_text(p['html']) if 'html' in p else plain(p['text']), drops) for p in pages}
+    tables = [r for s in doc['sources'] for t in s.get('rowsFrom', []) if t in texts for r in table_rows(t, texts[t])]
     for p in pages:
-        text = drop_lines(html_text(p['html']) if 'html' in p else plain(p['text']), drops)
+        text = texts[p['title']]
         for sec, t in chunks_of(p['title'], sections(text, skip)):
             allc.append(make(p['title'], sec, t, p['url'], p['kind'], p['fetched'], p['revid']))
         if p['kind'] in ekinds:
             body, names = entity_of(p['title'], text, eskip, aliases, start)
+            rows = rows_naming(p['title'], tables) if tables else ''
+            if rows and len(body) + len(rows) + 2 <= ENTITY_CHARS:   # where a list page puts it, when its own page doesn't say
+                body = f'{body}\n\n{rows}'
             if len(body.split()) >= 3:
                 h = hashlib.sha256(body.encode('utf-8')).hexdigest()[:16]
                 admit(h, body, p['title'], 'entry', p['url'], lambda p=p, body=body, names=names, h=h: ents.append(
