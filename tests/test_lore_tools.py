@@ -174,3 +174,105 @@ def test_entries_flow_through_clean_build_and_eval(tmp_path):
     r = tool(tmp_path, 'eval_lore.py', 'Test Game')
     assert r.returncode == 0, r.stdout + r.stderr
     assert 'recall 1.00' in r.stdout
+
+
+def test_table_rows_stay_on_one_line_and_fandom_extras_go():
+    from htmltext import html_text
+    page = ('<div class="mw-parser-output">'
+            '<aside class="portable-infobox"><h2 class="pi-title">Killavolt</h2><figure class="pi-image">pic</figure>'
+            '<div class="pi-data"><h3 class="pi-data-label">Character Type</h3>\n\t<div class="pi-data-value"><a>Enemy</a> (mini-boss)  </div></div>'
+            '<div class="pi-data"><h3 class="pi-data-label">Manufacturer:</h3><div class="pi-data-value">Vladof</div></div></aside>'
+            '<p>Killavolt is a miniboss found at Lectra City.</p>'
+            '<section class="trfc161"><h3>Quick Answers</h3><div class="quick-answers__answer-text">Made-up summary</div></section>'
+            '<table class="fandom-table"><tbody><tr>\n<th>Model Name\n</th>\n<th>Dropped By\n</th></tr>\n'
+            '<tr><td class="table-progress-checkbox-cell"><input type="checkbox"></td>\n<td><a>The Monarch</a>\n</td>\n<td><p>Killavolt<br>Sera</p>\n</td></tr>'
+            '</tbody></table></div>')
+    t = html_text(page)
+    assert '@@INFOBOX@@\n\nCharacter Type: Enemy (mini-boss)\n\nManufacturer: Vladof\n\n@@END@@' in t
+    assert 'Model Name | Dropped By' in t and 'The Monarch | Killavolt Sera' in t
+    assert not any(x in t for x in ('Quick Answers', 'Made-up', 'pic', 'Killavolt\n\nCharacter'))
+    secs = clean.sections(t)
+    assert [s for s, _ in secs] == ['Infobox', 'Overview'] and secs[1][1].startswith('Killavolt is a miniboss')
+
+
+def test_a_qualified_title_is_also_found_by_its_plain_name():
+    assert clean.entity_of('Unkempt Harold (Borderlands 3)', 'A legendary pistol.', set(), {})[1] == ['Unkempt Harold']
+    assert clean.entity_of('Hellwalker', 'A legendary shotgun.', set(), {})[1] == []
+
+
+def test_new_seed_and_source_fields_are_checked():
+    base = {'host': 'borderlands.fandom.com', 'license': 'CC BY-SA 3.0', 'terms': 'Read 2026-10-19; text is CC BY-SA, attribution required'}
+    ok = {'sources': [dict(base, via='api', robots={'read': '2026-10-19 in a browser', 'lines': ['User-agent: *', 'Allow: /api.php?action=']},
+                           seeds=[{'linkedFrom': 'List of shields', 'in': ['Legendary'], 'kind': 'item'}])]}
+    assert common.problems(ok) == []
+    for change in ({'via': 'scrape'}, {'robots': {'lines': ['x']}}, {'via': 'html'}, {'seeds': [{'category': 'Bosses', 'in': 'BL3'}]}):
+        bad = {'sources': [dict(ok['sources'][0], **change)]}
+        assert common.problems(bad), change
+
+
+def test_robots_that_cannot_be_read_stop_the_fetch_unless_read_by_hand(monkeypatch):
+    import urllib.error
+    import fetch
+    def blocked(*a, **k):
+        raise urllib.error.HTTPError('https://x.fandom.com/robots.txt', 403, 'Forbidden', {}, None)
+    monkeypatch.setattr(fetch.lookup, 'check_url', lambda url: None)
+    monkeypatch.setattr(fetch.lookup._opener, 'open', blocked)
+    monkeypatch.setattr(fetch, '_robots', {})
+    try:
+        fetch.robots('x.fandom.com')
+        assert False, 'an unreadable robots.txt must stop the fetch'
+    except PermissionError as e:
+        assert '"robots"' in str(e)
+    rp = fetch.robots('y.fandom.com', {'read': '2026-10-19 in a browser', 'lines': ['User-agent: *', 'Disallow: /wiki/Special:', 'Allow: /api.php?action=']})
+    assert rp.can_fetch(fetch.UA, '/api.php?action=parse&page=Killavolt') and not rp.can_fetch(fetch.UA, '/wiki/Special:Random')
+
+
+def test_a_seed_keeps_only_pages_also_in_its_categories(monkeypatch):
+    import fetch
+    cats = {'Bosses': ['Killavolt', 'Handsome Jack', 'Mouthpiece'], 'Borderlands 3 characters': ['Mouthpiece', 'Killavolt', 'Lilith']}
+    monkeypatch.setattr(fetch, 'members', lambda src, c: cats[c])
+    src = {'host': 'borderlands.fandom.com', 'via': 'api'}
+    assert fetch.titles(src, {'category': 'Bosses', 'in': ['Borderlands 3 characters']}, 100) == ['Killavolt', 'Mouthpiece']
+    assert fetch.titles(src, {'category': 'Bosses', 'limit': 1}, 100) == ['Killavolt']
+
+
+def test_a_written_guide_ships_with_its_published_address(tmp_path):
+    host = 'testgame.wiki.gg'
+    w = tmp_path / 'lore' / 'test-game'
+    (w / 'guides').mkdir(parents=True)
+    (w / 'guides' / 'vault-cards.md').write_text('# Vault Card farming\n\n## Vault Card daily: Psycho kills\n\nThe Slaughter Shaft on Pandora sends '
+                                                 'wave after wave of Psychos.\n\n## Sources\n\n- https://guides.example/vault-cards\n', encoding='utf-8')
+    guide = {'kind': 'guide', 'folder': str(w / 'guides'), 'url': 'https://github.com/FindlayHi/lorekeeper/blob/main/lore/test-game/guides/',
+             'license': 'own: Lorekeeper contributors', 'terms': 'Written 2026-10-19 from two cited guides, in our own words'}
+    doc = {'game': 'Test Game', 'sources': [{'host': host, 'license': 'CC BY-SA 3.0', 'terms': 'Read 2026-10-12; CC BY-SA text, attribution required',
+                                             'seeds': [{'category': 'x', 'kind': 'mechanic'}], 'skipSections': ['Sources']}, guide]}
+    assert common.problems(doc) == [] and common.hosts(doc) == {host, 'github.com'}
+    assert common.problems({'sources': [dict(guide, url='http://x.example/')]}) and common.problems({'sources': [dict(guide, license='mine')]})
+    json.dump(doc, open(w / 'sources.json', 'w'))
+    for d in ('assets', 'docs'):
+        os.makedirs(tmp_path / d, exist_ok=True)
+        json.dump({'games': {'Test Game': {'host': host}}}, open(tmp_path / d / 'cartridges.json', 'w'))
+    r = tool(tmp_path, 'clean.py', 'Test Game')
+    assert r.returncode == 0 and json.load(open(w / 'quarantine.json')) == [], r.stdout + r.stderr   # its sources' links are left out, not held
+    got = [json.loads(x) for x in open(w / 'chunks.jsonl').read().splitlines()]
+    assert [(c['title'], c['section'], c['kind']) for c in got] == [('Vault Card farming', 'Vault Card daily: Psycho kills', 'build')]
+    assert got[0]['url'].endswith('/guides/vault-cards.md') and 'guides.example' not in got[0]['text']
+    r = tool(tmp_path, 'build.py', 'Test Game', '--apply')
+    assert r.returncode == 0, r.stdout + r.stderr
+    import rag
+    assert rag.load(open(tmp_path / 'docs' / 'lore' / 'test-game.zip', 'rb').read())['chunks'][0]['url'].startswith('https://github.com/')
+
+
+def test_an_entry_gets_the_list_rows_that_name_it():
+    text = ('Legendary items drop from many places.\n\nManufacturer | Model Name | Dropped By | Location\n\n'
+            'COV | Sawbar | Borman Nates | Meridian Outskirts\n\nCOV | Psycho Stabber | Borman Nates | Meridian Metroplex\n\n'
+            'Dahl | Barrage | Buttmunch | The Droughts\n\nAnshin | Version 0.m | Dropped by Wotan the Invincible and Valkyrie Squad\n\nSee the list.')
+    rows = clean.table_rows('Legendary (Borderlands 3)', text)
+    assert len(rows) == 4 and all(h.startswith('Manufacturer |') for _, h, _ in rows)
+    got = clean.rows_naming('Borman Nates', rows)
+    assert got.splitlines() == ['From the table on Legendary (Borderlands 3):', 'Manufacturer | Model Name | Dropped By | Location',
+                                'COV | Sawbar | Borman Nates | Meridian Outskirts', 'COV | Psycho Stabber | Borman Nates | Meridian Metroplex']
+    assert 'Version 0.m' in clean.rows_naming('Wotan the Invincible', rows) and clean.rows_naming('Butt', rows) == ''
+    assert clean.rows_naming('Barrage (assault rifle)', rows).endswith('Dahl | Barrage | Buttmunch | The Droughts')
+    assert common.problems({'sources': [{'host': 'b.fandom.com', 'license': 'CC BY-SA 3.0', 'terms': 'Read 2026-10-19; CC BY-SA, attribution',
+                                         'seeds': [{'category': 'x'}], 'rowsFrom': 'Legendary'}]})

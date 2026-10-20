@@ -1,7 +1,8 @@
 """A small always-on-top box with the question and answer. It goes on a second monitor when there is one, since an
 exclusive-fullscreen game covers its own screen. Click it to copy the answer. Tk lives on the main thread; other threads post.
 It is drawn like the landing page's dialogue box: night navy, a stepped pixel border, a chunky offset shadow, and the
-page's pixel fonts (assets/fonts, loaded privately for this process)."""
+page's pixel font (assets/fonts, loaded privately for this process), one size throughout: pink for what you said, cream for
+Lorekeeper's answer."""
 import ctypes, os, queue, re, sys, tkinter as tk
 import tkinter.font as tkfont
 import win
@@ -14,6 +15,7 @@ KEY = '#ff00fe'          # painted where the window is see-through: the notched 
 PX = 4                   # one pixel of the pixel border, as on the page
 TEXT_W = 420             # wrap width of the question and answer
 PAD = 20
+FONT, FALLBACK = ('VT323', -22), ('Consolas', -15)   # the page's pixel font (assets/fonts), in pixels
 # A leading emoji names a state; the pixel fonts have no emoji, so it becomes a drawn icon instead of a box.
 MIC = ('....nnnn....', '...nssssn...', '...nswssn...', '...nssssn...', '...nssssn...', '.n.nssssn.n.',
        '.n.nbbbbn.n.', '..n.nnnn.n..', '...nn..nn...', '.....nn.....', '.....nn.....', '...nnnnnn...')   # docs/img/mic.svg
@@ -55,12 +57,9 @@ class Box:
         except tk.TclError:   # no colour keying: the corners and shadow sit on a plain dark square instead
             self.bg = SHADOW
         self.root.configure(bg=self.bg)
-        have = set(tkfont.families(self.root))
-        pixel = 'VT323' if 'VT323' in have else 'Consolas'
-        self.f_head = ('Press Start 2P', -8) if 'Press Start 2P' in have else ('Consolas', -11, 'bold')
-        self.f_tag = (pixel, -18 if pixel == 'VT323' else -13)
-        self.f_ask = (pixel, -22 if pixel == 'VT323' else -15)
-        self.f_ans = ('Segoe UI', 12)
+        # one font at one size for every word in the box, as the page's dialogue; colour alone tells who is talking
+        self.font = tkfont.Font(self.root, font=FONT if FONT[0] in tkfont.families(self.root) else FALLBACK)
+        self.line = self.font.metrics('linespace')
         self.c = tk.Canvas(self.root, bg=self.bg, highlightthickness=0, bd=0)
         self.c.pack()
         self.root.bind('<Button-1>', self._click)
@@ -79,6 +78,10 @@ class Box:
     def hide(self):
         self.q.put(None)
 
+    def linger(self):
+        """Start the usual countdown on a box that was told to stay (the voice has finished reading it out)."""
+        self.q.put('linger')
+
     # Tk thread
     def _pump(self):
         try:
@@ -86,6 +89,11 @@ class Box:
                 item = self.q.get_nowait()
                 if item is None:
                     self._withdraw()
+                    continue
+                if item == 'linger':
+                    if self.hide_at:
+                        self.root.after_cancel(self.hide_at)
+                    self.hide_at = self.root.after(self.seconds * 1000, self._withdraw)
                     continue
                 question, answer, stay, title, self.action, self.hint = item
                 if question:
@@ -120,34 +128,35 @@ class Box:
         _, a = plain(self.answer)
         done = bool(a.strip('.… '))            # a real answer, not the '…' while thinking
         x0, y0 = PX, PX                         # the navy panel's top-left; the border sits in the PX around it
-        tag_w = max(tkfont.Font(font=self.f_tag).measure(t) for t in ('YOU', 'LK')) + 5 + 6 + 12   # tag, gap, ▸, gap
+        f, mid = self.font, (self.line - 10) // 2   # mid: where a 10-pixel drawn mark sits centred on a line of text
+        tag_w = max(f.measure(t) for t in ('YOU', 'LK')) + 5 + 6 + 12   # tag, gap, ▸, gap
         tx = x0 + PAD + tag_w                   # text column, hanging past the YOU ▸ / LK ▸ tags and the mic
         iw = PAD + tag_w + TEXT_W + PAD
         # contents first, then the panel sized to fit them, lowered underneath
-        y = y0 + 14
-        self._pixels(('..x..', '.xxx.', 'xxxxx', '.xxx.', '..x..'), x0 + PAD, y, 2, {'x': LILAC})   # the page's ◆
-        c.create_text(x0 + PAD + 16, y + 1, text='LOREKEEPER', font=self.f_head, fill=LILAC, anchor='nw')
+        y = y0 + 12
+        self._pixels(('..x..', '.xxx.', 'xxxxx', '.xxx.', '..x..'), x0 + PAD, y + mid, 2, {'x': LILAC})   # the page's ◆
+        c.create_text(x0 + PAD + 16, y, text='LOREKEEPER', font=f, fill=LILAC, anchor='nw')
         if done:
-            c.create_text(x0 + iw - PAD, y + 5, text=self.hint if self.action else 'CLICK TO COPY', font=self.f_tag,
-                          fill=GOLD if self.action else LILAC, anchor='e')
-        y += 10 + 12
+            c.create_text(x0 + iw - PAD, y, text=self.hint if self.action else 'CLICK TO COPY', font=f,
+                          fill=GOLD if self.action else LILAC, anchor='ne')
+        y += self.line + 8
         rule_y = y
         y += PX + 14
         if q:
             if state == 'mic':
-                self._pixels(MIC, x0 + PAD, y + 1, 2, {'n': INK, 's': SKY, 'b': '#2f6bff', 'w': INK})
+                self._pixels(MIC, x0 + PAD, y + max(0, (self.line - 24) // 2), 2, {'n': INK, 's': SKY, 'b': '#2f6bff', 'w': INK})
             elif self.title:   # Lorekeeper's own heading: no YOU tag
                 pass
             else:
-                c.create_text(x0 + PAD, y + 2, text='YOU', font=self.f_tag, fill=PINK, anchor='nw')   # 'YOU ▸', as on the page
-                self._arrow(x0 + PAD + tkfont.Font(font=self.f_tag).measure('YOU') + 5, y + 6, PINK)
-            t = c.create_text(x0 + PAD if self.title else tx, y, text=q, font=self.f_ask, fill=LILAC if self.title else SKY if state else DIM,
+                c.create_text(x0 + PAD, y, text='YOU', font=f, fill=PINK, anchor='nw')   # 'YOU ▸', as on the page
+                self._arrow(x0 + PAD + f.measure('YOU') + 5, y + mid, PINK)
+            t = c.create_text(x0 + PAD if self.title else tx, y, text=q, font=f, fill=LILAC if self.title else SKY if state else PINK,
                               anchor='nw', width=TEXT_W + (tag_w if self.title else 0))
             y = max(c.bbox(t)[3], y + (24 if state == 'mic' else 0)) + 10
         if a:
-            c.create_text(x0 + PAD, y + 3, text='LK', font=self.f_tag, fill=SKY, anchor='nw')
-            self._arrow(x0 + PAD + tkfont.Font(font=self.f_tag).measure('LK') + 5, y + 7, SKY)
-            t = c.create_text(tx, y, text=a, font=self.f_ans, fill=INK, anchor='nw', width=TEXT_W)
+            c.create_text(x0 + PAD, y, text='LK', font=f, fill=SKY, anchor='nw')
+            self._arrow(x0 + PAD + f.measure('LK') + 5, y + mid, SKY)
+            t = c.create_text(tx, y, text=a, font=f, fill=INK, anchor='nw', width=TEXT_W)
             y = c.bbox(t)[3] + 6
         ih = y - y0 + 18
         if done:   # the page's gold ▼, blinking under a finished answer

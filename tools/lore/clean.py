@@ -3,7 +3,7 @@
 Writes lore/<slug>/chunks.jsonl and quarantine.json. A chunk that looks like it is talking to the model (or hides
 something) is left out until a person reads it and lists its hash under "approved" in lore/<slug>/reviewed.json.
 Chunks are ~100-300 words, with the infobox (stats) as a chunk of its own."""
-import hashlib, os, re, sys, time
+import hashlib, os, re, sys, time, urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 from htmltext import html_text
@@ -138,20 +138,29 @@ def make(title, section, text, url, kind, fetched, rev):
             'text': text, 'kind': kind, 'fetched': fetched, 'rev': rev, 'hash': h}
 
 
-def user_chunks(s):
-    """A player's own folder of md/txt guides -> chunks (url 'local:<file>')."""
+def user_chunks(s, skip=()):
+    """A folder of md/txt guides -> chunks. A player's own: url 'local:<file>'. A guide Lorekeeper publishes ("kind": "guide"):
+    url <its url><file>, titled by the file's '# ' heading, and its sections in skip (its list of sources) left out."""
     now = time.strftime('%Y-%m-%d')
+    guide = s.get('kind') == 'guide'
     for name in sorted(os.listdir(s['folder'])):
         if name.lower().endswith(('.md', '.txt')):
             with open(os.path.join(s['folder'], name), encoding='utf-8', errors='replace') as f:
                 text = f.read()
+            title = name
+            if guide:
+                h1 = re.search(r'(?m)^# +(.+?)\s*$', text)
+                title = h1[1] if h1 else name
+                text = text[:h1.start()] + text[h1.end():] if h1 else text
             text = re.sub(r'(?m)^#{1,4}\s*(.+?)\s*#*$', lambda m: f'== {m[1]} ==', text)
-            for sec, t in chunks_of(name, sections(text)):
-                yield make(name, sec, t, 'local:' + re.sub(r'[^\w .-]', '_', name)[:80], 'lore', now, 0)
+            url = s['url'] + urllib.parse.quote(name) if guide else 'local:' + re.sub(r'[^\w .-]', '_', name)[:80]
+            for sec, t in chunks_of(title, sections(text, skip if guide else ())):
+                yield make(title, sec, t, url, 'build' if guide else 'lore', now, 0)
 
 
 ENTITY_CHARS = 2500
 OR_NAME = re.compile(r'\bor "((?:The )?[^"\n]{3,40})"')   # 'Sally Smithson or "The Nurse" is one of 44 Killers'
+QUALIFIED = re.compile(r'(.{3,}?) \([^()]+\)')   # 'Unkempt Harold (Borderlands 3)', 'Grave (enemy)': players say the name without the wiki's qualifier
 
 
 def drop_lines(text, patterns):
@@ -177,8 +186,38 @@ def entity_of(title, text, skip, aliases, start=None):
         out.append(para[:ENTITY_CHARS])
         used += len(para)
     body = '\n\n'.join(out).strip()
-    auto = OR_NAME.findall(body[:1500])
+    auto = OR_NAME.findall(body[:1500]) + [m[1] for m in [QUALIFIED.fullmatch(title)] if m]
     return body, sorted(set(auto) | set(aliases.get(title, [])))
+
+
+def table_rows(page_title, text):
+    """A page's table rows (lines of 3+ cells joined by ' | ', as htmltext writes them) -> [(page, header, row)]."""
+    out, head = [], None
+    for ln in text.splitlines():
+        if not ln.strip():
+            continue
+        if ln.count(' | ') < 2:
+            head = None   # prose between tables
+        elif head is None:
+            head = ln     # a table's first row names its columns
+        else:
+            out.append((page_title, head, ln))
+    return out
+
+
+def rows_naming(title, rows, most=12):
+    """The rows that name this thing in a cell (a boss in a drop list's 'Dropped By' column, with the place next to it),
+    under their table's header, as text for its entry; '' when none do."""
+    names = {title} | {m[1] for m in [QUALIFIED.fullmatch(title)] if m}
+    rx = re.compile(r'(?<![\w-])(?:' + '|'.join(re.escape(n) for n in names) + r')(?![\w-])', re.I)
+    hits = [(p, h, r) for p, h, r in rows if any(rx.search(c) for c in r.split(' | '))][:most]
+    out, last = [], None
+    for p, h, r in hits:
+        if (p, h) != last:
+            out += [f'From the table on {p}:', h]
+            last = (p, h)
+        out.append(r)
+    return '\n'.join(out)
 
 
 def run(game):
@@ -206,19 +245,24 @@ def run(game):
         else:
             put()
     allc = []
+    texts = {p['title']: drop_lines(html_text(p['html']) if 'html' in p else plain(p['text']), drops) for p in pages}
+    tables = [r for s in doc['sources'] for t in s.get('rowsFrom', []) if t in texts for r in table_rows(t, texts[t])]
     for p in pages:
-        text = drop_lines(html_text(p['html']) if 'html' in p else plain(p['text']), drops)
+        text = texts[p['title']]
         for sec, t in chunks_of(p['title'], sections(text, skip)):
             allc.append(make(p['title'], sec, t, p['url'], p['kind'], p['fetched'], p['revid']))
         if p['kind'] in ekinds:
             body, names = entity_of(p['title'], text, eskip, aliases, start)
+            rows = rows_naming(p['title'], tables) if tables else ''
+            if rows and len(body) + len(rows) + 2 <= ENTITY_CHARS:   # where a list page puts it, when its own page doesn't say
+                body = f'{body}\n\n{rows}'
             if len(body.split()) >= 3:
                 h = hashlib.sha256(body.encode('utf-8')).hexdigest()[:16]
                 admit(h, body, p['title'], 'entry', p['url'], lambda p=p, body=body, names=names, h=h: ents.append(
                     {'name': p['title'], 'kind': p['kind'], 'aliases': names, 'text': body, 'url': p['url'], 'fetched': p['fetched'], 'rev': p['revid'], 'hash': h}))
     for s in doc['sources']:
-        if s.get('kind') == 'user':
-            allc += list(user_chunks(s))
+        if s.get('kind') in ('user', 'guide'):
+            allc += list(user_chunks(s, skip))
     for c in allc:
         if c['hash'] in seen:
             continue

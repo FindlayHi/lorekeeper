@@ -75,9 +75,9 @@ if __name__ == '__main__':
             by.setdefault(c['url'].split('/')[2] if c['url'].startswith('https') else 'local', []).append(c)
         lines += ['', '## Sources', '', '| host | license | chunks | pages |', '|---|---|---|---|']
         for s in read(os.path.join(work(game), 'sources.json'))['sources']:
-            h = s.get('host') or 'local'
+            h = source_host(s)
             lines.append(f"| {h} | {s['license']} | {len(by.get(h, []))} | {len({c['title'] for c in by.get(h, [])})} |")
-        lines += ['', f"Terms read: " + '; '.join(f"{s.get('host', 'local')}: {s.get('terms', '')}" for s in read(os.path.join(work(game), 'sources.json'))['sources'])]
+        lines += ['', f"Terms read: " + '; '.join(f"{source_host(s)}: {s.get('terms', '')}" for s in read(os.path.join(work(game), 'sources.json'))['sources'])]
         lines += ['', f"Pack: version {pack.get('version', '?')}, built for game build {pack['build'] or 'unknown'}, trust {pack['trust']}, {len(pack['chunks'])} chunks."]
         if r:
             lines += ['', '## Questions', ''] + [f"- {'ok' if x['ok'] else 'FAIL'}: {x['q']} {x['note']}" for x in r['results']]
