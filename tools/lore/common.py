@@ -77,6 +77,8 @@ def problems(src):
                 out.append(f"{n}: a seed's 'in' is a list of categories")
         if not isinstance(s.get('rowsFrom', []), list):
             out.append(f"{n}: 'rowsFrom' is a list of page titles whose table rows are added to the entries they name")
+        if not isinstance(s.get('mentionsFrom', []), list) or not isinstance(s.get('entityLastSections', []), list):
+            out.append(f"{n}: 'mentionsFrom' (page kinds, e.g. [\"lore\"]) and 'entityLastSections' (section names) are lists")
         if s.get('via', 'html') not in ('html', 'api'):
             out.append(f"{n}: 'via' is html (article pages, the default) or api (api.php, where robots.txt allows it)")
         r = s.get('robots')
