@@ -78,6 +78,10 @@ class Box:
     def hide(self):
         self.q.put(None)
 
+    def linger(self):
+        """Start the usual countdown on a box that was told to stay (the voice has finished reading it out)."""
+        self.q.put('linger')
+
     # Tk thread
     def _pump(self):
         try:
@@ -85,6 +89,11 @@ class Box:
                 item = self.q.get_nowait()
                 if item is None:
                     self._withdraw()
+                    continue
+                if item == 'linger':
+                    if self.hide_at:
+                        self.root.after_cancel(self.hide_at)
+                    self.hide_at = self.root.after(self.seconds * 1000, self._withdraw)
                     continue
                 question, answer, stay, title, self.action, self.hint = item
                 if question:
