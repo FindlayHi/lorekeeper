@@ -276,3 +276,27 @@ def test_an_entry_gets_the_list_rows_that_name_it():
     assert clean.rows_naming('Barrage (assault rifle)', rows).endswith('Dahl | Barrage | Buttmunch | The Droughts')
     assert common.problems({'sources': [{'host': 'b.fandom.com', 'license': 'CC BY-SA 3.0', 'terms': 'Read 2026-10-19; CC BY-SA, attribution',
                                          'seeds': [{'category': 'x'}], 'rowsFrom': 'Legendary'}]})
+
+
+def test_an_entry_says_where_a_place_page_puts_it_and_cuts_strategy_first():
+    places = {'Floodmoor Basin': 'A swamp on Eden-6.\n\n== Bosses ==\n\n- Long Arm the Smasher: in the north-east fishery.\n- Chonk Stomp',
+              'Lectra City': 'A city.\n\n- Trudy the Toeless'}
+    got = clean.mentions('Long Arm the Smasher', places)
+    assert got == 'On the Floodmoor Basin page: Long Arm the Smasher: in the north-east fishery.'
+    mission = {'Rise and Grind': '@@INFOBOX@@\n\nLocation: Meridian Metroplex\n\n@@END@@\n\n- Kill Coffee Commander'}
+    assert clean.mentions('Coffe Commander', mission) == '' and clean.mentions('Coffe Commander', mission, also=['Coffee Commander'])
+    assert clean.mentions('Coffee Commander', mission) == 'On the Rise and Grind page (Location: Meridian Metroplex): Kill Coffee Commander'
+    assert clean.mentions('Apollo', places) == '' and clean.mentions('Long Arm the Smasher', {'Long Arm the Smasher': 'Long Arm the Smasher'}) == ''
+    text = ('Long Arm the Smasher is a mini-boss.\n\n== Strategy ==\n\n' + 'Dodge. ' * 600 + '\n\n== Notes ==\n\n- Drops the Lob.')
+    body, _ = clean.entity_of('Long Arm the Smasher', text, set(), {}, last={'strategy'}, extra=got)
+    assert body.index('Floodmoor Basin') < body.index('Drops the Lob') and 'Dodge' not in body   # where it is, then drops; strategy is cut
+    long_notes = 'Vermivorous is a raid boss.\n\n== Notes ==\n\n' + '\n\n'.join(f'- Borderlands 2 drop {i} ' + 'x' * 80 for i in range(40))
+    body, _ = clean.entity_of('Vermivorous', long_notes, set(), {}, extra='On the You. Will. Die. page (Location: Darkthirst Dominion): Vermivorous spawns')
+    assert 'Darkthirst Dominion' in body[:rag_cap()]   # long notes can't push out where it is, even after the app trims an entry
+    body, _ = clean.entity_of('Long Arm the Smasher', text, set(), {})
+    assert 'Drops the Lob' not in body   # without 'last', page order pushes the drops out
+
+
+def rag_cap():
+    import rag
+    return rag.ENTITY_TEXT

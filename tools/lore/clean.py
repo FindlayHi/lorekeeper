@@ -169,16 +169,20 @@ def drop_lines(text, patterns):
     return '\n'.join(ln for ln in text.splitlines() if not any(r.match(ln.strip()) for r in rx))
 
 
-def entity_of(title, text, skip, aliases, start=None):
+def entity_of(title, text, skip, aliases, start=None, last=(), extra=''):
     """One page -> the entry for the thing it is about: its sections in order (minus cosmetics, lore...), cut at ENTITY_CHARS.
-    start: a regex for the line an entry begins at in the lead (killers' pages open with a long journal quote before their stats)."""
+    start: a regex for the line an entry begins at in the lead (killers' pages open with a long journal quote before their stats).
+    last: sections that go after the rest, so a long one (a boss's strategy) is what gets cut, not its drops.
+    extra: what other pages say about it (rows_naming, mentions), right after its lead: where it is matters more than its notes."""
     if start:
         m = re.search(start, text, re.M)
         if m and (text.find('\n== ') < 0 or m.start() < text.find('\n== ')):
             text = text[m.start():]
-    parts = []
+    lead, first, later = [], [], []
     for path, body in sections(text, skip):
-        parts.append(body if path in ('Overview', 'Infobox') else f'{path}\n{body}')
+        (lead if path in ('Overview', 'Infobox') else later if path.split(' > ')[0].lower() in last else first).append(
+            body if path in ('Overview', 'Infobox') else f'{path}\n{body}')
+    parts = lead + ([extra] if extra else []) + first + later
     out, used = [], 0
     for para in '\n\n'.join(parts).split('\n\n'):
         if used + len(para) > ENTITY_CHARS and out:
@@ -220,6 +224,28 @@ def rows_naming(title, rows, most=12):
     return '\n'.join(out)
 
 
+def mentions(title, texts, most=3, also=()):
+    """Lines on other pages (a place's or a mission's) that name this thing: 'On the The Droughts page: ... Mincemeat ...', with
+    where that page says it is ('On the Rise and Grind page (Location: Meridian Metroplex): ...'); '' when none do.
+    texts: {page title: its text}. also: its aliases (a misspelt title: 'Coffe Commander'). For a boss whose own page says
+    only which mission it's in."""
+    names = {title} | {m[1] for m in [QUALIFIED.fullmatch(title)] if m} | set(also)
+    rx = re.compile(r'(?<![\w-])(?:' + '|'.join(re.escape(n) for n in names) + r')(?![\w-])')
+    out = []
+    for page, text in texts.items():
+        if page == title:
+            continue
+        for ln in text.splitlines():
+            ln = ln.strip().lstrip('- ')
+            if rx.search(ln) and not ln.startswith('=='):
+                where = re.search(r'(?m)^Location: *(.+)$', text)   # its infobox
+                out.append(f"On the {page} page{f' (Location: {where[1].strip()[:80]})' if where else ''}: {ln[:300]}")
+                break
+        if len(out) >= most:
+            break
+    return '\n'.join(out)
+
+
 def run(game):
     """lore/<slug>/raw/pages.jsonl -> chunks.jsonl, entities.jsonl and quarantine.json; returns the counts."""
     doc = sources(game)
@@ -247,15 +273,17 @@ def run(game):
     allc = []
     texts = {p['title']: drop_lines(html_text(p['html']) if 'html' in p else plain(p['text']), drops) for p in pages}
     tables = [r for s in doc['sources'] for t in s.get('rowsFrom', []) if t in texts for r in table_rows(t, texts[t])]
+    kinds = [k for s in doc['sources'] for k in s.get('mentionsFrom', [])]   # in the order given: places before missions before the rest
+    places = {p['title']: texts[p['title']] for k in kinds for p in pages if p['kind'] == k}
+    last = {x.lower() for s in doc['sources'] for x in s.get('entityLastSections', [])}
     for p in pages:
         text = texts[p['title']]
         for sec, t in chunks_of(p['title'], sections(text, skip)):
             allc.append(make(p['title'], sec, t, p['url'], p['kind'], p['fetched'], p['revid']))
         if p['kind'] in ekinds:
-            body, names = entity_of(p['title'], text, eskip, aliases, start)
-            rows = rows_naming(p['title'], tables) if tables else ''
-            if rows and len(body) + len(rows) + 2 <= ENTITY_CHARS:   # where a list page puts it, when its own page doesn't say
-                body = f'{body}\n\n{rows}'
+            extra = '\n\n'.join(x for x in (rows_naming(p['title'], tables) if tables else '',   # where a list or a place's page puts it,
+                                            mentions(p['title'], places, also=aliases.get(p['title'], ())) if places else '') if x)   # when its own page doesn't say
+            body, names = entity_of(p['title'], text, eskip, aliases, start, last, extra)
             if len(body.split()) >= 3:
                 h = hashlib.sha256(body.encode('utf-8')).hexdigest()[:16]
                 admit(h, body, p['title'], 'entry', p['url'], lambda p=p, body=body, names=names, h=h: ents.append(
