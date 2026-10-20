@@ -176,6 +176,7 @@ Everything per game is a plain file you can edit, in `%APPDATA%\Lorekeeper\games
 | `aiUrl` / `aiModel` / `aiDeepModel` | | the server (e.g. `http://localhost:11434/v1`), its model, and an optional bigger one for "in detail" and gear math (blank = `aiModel`) |
 | `whisper` / `whisperDevice` | `base.en` / `cpu` | `small.en` hears names better; `cuda` with an NVIDIA GPU |
 | `spoilers` / `screen` | `false` / `true` | also in the tray |
+| `boxWhileSpeaking` / `boxSeconds` | `false` / `12` | tray → **Keep it up while talking**: the box stays until the voice has finished, so you can read along; then it closes after `boxSeconds` |
 | `telemetry` | *(asked on first run)* | anonymous usage counts; also in the tray. See [Privacy](#privacy--usage-counts) |
 </details>
 

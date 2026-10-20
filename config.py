@@ -29,6 +29,7 @@ DEFAULTS = {
     'rate': 0,                   # speed, -10..10
     'box': True,                 # show the question and answer in a small box too
     'boxSeconds': 12,
+    'boxWhileSpeaking': False,   # True: the box stays up while Lorekeeper is still talking, so you can read along; boxSeconds start after
     'spoilers': False,           # True: answers ignore your progress notes
     'screen': True,              # "what is this item" sends a screenshot
     'lore': True,                # answer from the game's lore pack first (if its cartridge has one), the live wiki after

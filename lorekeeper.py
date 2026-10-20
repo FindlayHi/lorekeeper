@@ -98,10 +98,27 @@ class App:
 
     def say(self, question, answer, title=False):
         self.voice.say(answer)
-        if self.box:
-            self.box.show(question, answer, title=title)
+        self.show_said(question, answer, title=title)
         if self.listener.on:
             self.after_speaking()
+
+    def show_said(self, question, answer, title=False):
+        """The box for something Lorekeeper is saying. With boxWhileSpeaking (tray: Keep it up while talking) it stays
+        until the voice has finished, so you can read along, then the usual boxSeconds; a new question takes the box over."""
+        box = self.box
+        if not box:
+            return
+        hold = self.cfg['boxWhileSpeaking'] and self.voice.busy()
+        box.show(question, answer, stay=hold, title=title)
+        if hold:
+            gen = self.gen
+
+            def wait():
+                while self.voice.busy() and gen == self.gen:
+                    time.sleep(0.2)
+                if gen == self.gen:   # not cut off by the hotkey or a new question, which show their own box
+                    box.linger()
+            threading.Thread(target=wait, daemon=True).start()
 
     def hint(self):
         return ', '.join(([self.game['name']] if self.game else []) + notes.names(self.game))
@@ -338,8 +355,7 @@ class App:
         else:
             self.voice.stop()   # what was spoken was not the answer after all
         self.voice.say(' '.join(rest))
-        if self.box:
-            self.box.show(q, a + (f'\n\nNoted: {learned}. Say "forget that note" if it\'s wrong.' if learned and self.game else ''))   # seen, never spoken
+        self.show_said(q, a + (f'\n\nNoted: {learned}. Say "forget that note" if it\'s wrong.' if learned and self.game else ''))   # seen, never spoken
         if self.listener.on:
             self.after_speaking()
         self.last, self.last_q = a, q
@@ -455,6 +471,8 @@ def tray(app, box):
             if romm.connected() else [pystray.MenuItem('Connect RomM…', connect_romm)])),
         pystray.MenuItem('Spoilers', flip('spoilers'), checked=lambda _: app.cfg['spoilers']),
         pystray.MenuItem('Show answers in a box', flip('box'), checked=lambda _: app.cfg['box']),
+        pystray.MenuItem('Keep it up while talking', flip('boxWhileSpeaking'), checked=lambda _: app.cfg['boxWhileSpeaking'],
+                         enabled=lambda _: app.cfg['box']),
         pystray.MenuItem('Use the screen', flip('screen'), checked=lambda _: app.cfg['screen']),
         pystray.MenuItem("This game's notes", lambda *_: app.game and (notes.add(app.game, 'notes opened') if not os.path.exists(notes.path(app.game)) else None,
                                                                      os.startfile(notes.path(app.game))), enabled=lambda _: bool(app.game)),
@@ -625,6 +643,7 @@ def tray(app, box):
             Item('Voice', sub=voices_page),
             Item('Spoilers', action=flip('spoilers'), check=lambda: app.cfg['spoilers']),
             Item('Show answers in a box', action=flip('box'), check=lambda: app.cfg['box']),
+            Item('Keep it up while talking', action=flip('boxWhileSpeaking'), check=lambda: app.cfg['boxWhileSpeaking'], enabled=lambda: app.cfg['box']),
             Item('Use the screen', action=flip('screen'), check=lambda: app.cfg['screen']),
             Item('MORE', header=True),
             Item('RomM', sub=romm_page) if romm.connected() else Item('Connect RomM', action=connect_romm, note='pair'),
