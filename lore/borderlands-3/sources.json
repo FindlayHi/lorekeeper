@@ -1,0 +1,183 @@
+{
+ "game": "Borderlands 3",
+ "steamAppId": 397540,
+ "sources": [
+  {
+   "host": "borderlands.fandom.com",
+   "license": "CC BY-SA 3.0",
+   "terms": "Read 2026-10-19: the wiki's siteinfo gives its rights as CC-BY-SA (https://www.fandom.com/licensing) and Fandom's Help:Licensing names the Creative Commons Attribution-Share Alike License 3.0, attribution required; Fandom's robots.txt allows api.php?action= for all agents but disallows AI crawlers it names (GPTBot, ClaudeBot, CCBot and others), and the wiki's article pages and robots.txt are behind a Cloudflare check that scripts can't pass, so pages are read through api.php (action=parse) at one a second.",
+   "via": "api",
+   "robots": {
+    "read": "2026-10-19, community.fandom.com/robots.txt (Fandom serves the same file on every wiki); one read got through before Cloudflare began challenging scripts. Only the start of the User-agent: * group was seen.",
+    "lines": [
+     "User-agent: GPTBot",
+     "Disallow: /",
+     "User-agent: CCBot",
+     "Disallow: /",
+     "User-agent: OAI-SearchBot",
+     "Disallow: /",
+     "User-agent: ClaudeBot",
+     "Disallow: /",
+     "User-agent: *",
+     "Allow: /api.php?",
+     "Allow: /api.php?action=",
+     "Allow: /api.php?*&action=",
+     "Allow: /wiki/Special:CreateNewWiki",
+     "Allow: /wiki/Special:AllMaps",
+     "Allow: /wiki/Special:GameUtility/"
+    ]
+   },
+   "seeds": [
+    {
+     "category": "Weapons in Borderlands 3",
+     "in": [
+      "Legendary",
+      "Unique"
+     ],
+     "kind": "item",
+     "limit": 600
+    },
+    {
+     "category": "Shields in Borderlands 3",
+     "in": [
+      "Legendary",
+      "Unique"
+     ],
+     "kind": "item",
+     "limit": 100
+    },
+    {
+     "category": "Class Mods in Borderlands 3",
+     "in": [
+      "Legendary"
+     ],
+     "kind": "item",
+     "limit": 100
+    },
+    {
+     "linkedFrom": "List of grenade mods in Borderlands 3",
+     "in": [
+      "Legendary",
+      "Unique"
+     ],
+     "kind": "item",
+     "limit": 100
+    },
+    {
+     "linkedFrom": "List of artifacts in Borderlands 3",
+     "in": [
+      "Legendary",
+      "Unique"
+     ],
+     "kind": "item",
+     "limit": 100
+    },
+    {
+     "category": "Bosses",
+     "in": [
+      "Borderlands 3 characters"
+     ],
+     "kind": "boss",
+     "limit": 300
+    },
+    {
+     "category": "Borderlands 3 locations",
+     "kind": "lore",
+     "limit": 80
+    },
+    {
+     "pages": [
+      "Legendary (Borderlands 3)",
+      "Unique (Borderlands 3)",
+      "Director's Cut",
+      "Vault Rewards",
+      "Mayhem Mode",
+      "Anointed (Borderlands 3)",
+      "Circle of Slaughter",
+      "Proving Grounds",
+      "Arms Race",
+      "Takedown at the Maliwan Blacksite",
+      "Takedown at the Guardian Breach",
+      "Challenge (Borderlands 3)",
+      "Eridium",
+      "Loot-O-Gram",
+      "Lootable object/Borderlands 3",
+      "Guardian Rank",
+      "True Trial"
+     ],
+     "kind": "mechanic"
+    }
+   ],
+   "skipSections": [
+    "Quick Answers",
+    "Gallery",
+    "Media",
+    "Videos",
+    "Video",
+    "References",
+    "See Also",
+    "See also",
+    "External Links",
+    "External links",
+    "Trivia",
+    "Quotes"
+   ],
+   "entityKinds": [
+    "item",
+    "boss"
+   ],
+   "entitySkipSections": [
+    "Involvement",
+    "Appearances",
+    "Strategy",
+    "Usage & Description",
+    "Usage and Description",
+    "Notable Variants",
+    "Variants",
+    "History",
+    "Personality"
+   ],
+   "dropLines": [
+    "^Provided by: Fandom$",
+    "^Main article: .*$"
+   ],
+   "aliases": {
+    "Projectile Recursion": [
+     "Recursion"
+    ],
+    "O.P.Q. System": [
+     "OPQ"
+    ],
+    "Hemovorous the Invincible": [
+     "Hemovorous"
+    ],
+    "Wotan the Invincible": [
+     "Wotan"
+    ],
+    "Scourge the Invincible Martyr": [
+     "Scourge"
+    ],
+    "Anathema the Relentless": [
+     "Anathema"
+    ],
+    "Vermivorous the Invincible": [
+     "Vermivorous"
+    ]
+   },
+   "rowsFrom": [
+    "Legendary (Borderlands 3)",
+    "Unique (Borderlands 3)"
+   ]
+  },
+  {
+   "kind": "guide",
+   "folder": "lore/borderlands-3/guides",
+   "url": "https://github.com/FindlayHi/lorekeeper/blob/main/lore/borderlands-3/guides/",
+   "license": "own: Lorekeeper contributors",
+   "terms": "Written 2026-10-19 in our own words from three published guides (MentalMars, KosGames, Game Rant), each farm spot backed by at least one of them; the guides are listed in the file's Sources section, which is left out of the pack.",
+   "skipSections": [
+    "Sources"
+   ]
+  }
+ ]
+}
