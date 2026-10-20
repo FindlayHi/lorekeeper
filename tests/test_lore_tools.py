@@ -174,3 +174,63 @@ def test_entries_flow_through_clean_build_and_eval(tmp_path):
     r = tool(tmp_path, 'eval_lore.py', 'Test Game')
     assert r.returncode == 0, r.stdout + r.stderr
     assert 'recall 1.00' in r.stdout
+
+
+def test_table_rows_stay_on_one_line_and_fandom_extras_go():
+    from htmltext import html_text
+    page = ('<div class="mw-parser-output">'
+            '<aside class="portable-infobox"><h2 class="pi-title">Killavolt</h2><figure class="pi-image">pic</figure>'
+            '<div class="pi-data"><h3 class="pi-data-label">Character Type</h3>\n\t<div class="pi-data-value"><a>Enemy</a> (mini-boss)  </div></div>'
+            '<div class="pi-data"><h3 class="pi-data-label">Manufacturer:</h3><div class="pi-data-value">Vladof</div></div></aside>'
+            '<p>Killavolt is a miniboss found at Lectra City.</p>'
+            '<section class="trfc161"><h3>Quick Answers</h3><div class="quick-answers__answer-text">Made-up summary</div></section>'
+            '<table class="fandom-table"><tbody><tr>\n<th>Model Name\n</th>\n<th>Dropped By\n</th></tr>\n'
+            '<tr><td class="table-progress-checkbox-cell"><input type="checkbox"></td>\n<td><a>The Monarch</a>\n</td>\n<td><p>Killavolt<br>Sera</p>\n</td></tr>'
+            '</tbody></table></div>')
+    t = html_text(page)
+    assert '@@INFOBOX@@\n\nCharacter Type: Enemy (mini-boss)\n\nManufacturer: Vladof\n\n@@END@@' in t
+    assert 'Model Name | Dropped By' in t and 'The Monarch | Killavolt Sera' in t
+    assert not any(x in t for x in ('Quick Answers', 'Made-up', 'pic', 'Killavolt\n\nCharacter'))
+    secs = clean.sections(t)
+    assert [s for s, _ in secs] == ['Infobox', 'Overview'] and secs[1][1].startswith('Killavolt is a miniboss')
+
+
+def test_a_qualified_title_is_also_found_by_its_plain_name():
+    assert clean.entity_of('Unkempt Harold (Borderlands 3)', 'A legendary pistol.', set(), {})[1] == ['Unkempt Harold']
+    assert clean.entity_of('Hellwalker', 'A legendary shotgun.', set(), {})[1] == []
+
+
+def test_new_seed_and_source_fields_are_checked():
+    base = {'host': 'borderlands.fandom.com', 'license': 'CC BY-SA 3.0', 'terms': 'Read 2026-10-19; text is CC BY-SA, attribution required'}
+    ok = {'sources': [dict(base, via='api', robots={'read': '2026-10-19 in a browser', 'lines': ['User-agent: *', 'Allow: /api.php?action=']},
+                           seeds=[{'linkedFrom': 'List of shields', 'in': ['Legendary'], 'kind': 'item'}])]}
+    assert common.problems(ok) == []
+    for change in ({'via': 'scrape'}, {'robots': {'lines': ['x']}}, {'via': 'html'}, {'seeds': [{'category': 'Bosses', 'in': 'BL3'}]}):
+        bad = {'sources': [dict(ok['sources'][0], **change)]}
+        assert common.problems(bad), change
+
+
+def test_robots_that_cannot_be_read_stop_the_fetch_unless_read_by_hand(monkeypatch):
+    import urllib.error
+    import fetch
+    def blocked(*a, **k):
+        raise urllib.error.HTTPError('https://x.fandom.com/robots.txt', 403, 'Forbidden', {}, None)
+    monkeypatch.setattr(fetch.lookup, 'check_url', lambda url: None)
+    monkeypatch.setattr(fetch.lookup._opener, 'open', blocked)
+    monkeypatch.setattr(fetch, '_robots', {})
+    try:
+        fetch.robots('x.fandom.com')
+        assert False, 'an unreadable robots.txt must stop the fetch'
+    except PermissionError as e:
+        assert '"robots"' in str(e)
+    rp = fetch.robots('y.fandom.com', {'read': '2026-10-19 in a browser', 'lines': ['User-agent: *', 'Disallow: /wiki/Special:', 'Allow: /api.php?action=']})
+    assert rp.can_fetch(fetch.UA, '/api.php?action=parse&page=Killavolt') and not rp.can_fetch(fetch.UA, '/wiki/Special:Random')
+
+
+def test_a_seed_keeps_only_pages_also_in_its_categories(monkeypatch):
+    import fetch
+    cats = {'Bosses': ['Killavolt', 'Handsome Jack', 'Mouthpiece'], 'Borderlands 3 characters': ['Mouthpiece', 'Killavolt', 'Lilith']}
+    monkeypatch.setattr(fetch, 'members', lambda src, c: cats[c])
+    src = {'host': 'borderlands.fandom.com', 'via': 'api'}
+    assert fetch.titles(src, {'category': 'Bosses', 'in': ['Borderlands 3 characters']}, 100) == ['Killavolt', 'Mouthpiece']
+    assert fetch.titles(src, {'category': 'Bosses', 'limit': 1}, 100) == ['Killavolt']

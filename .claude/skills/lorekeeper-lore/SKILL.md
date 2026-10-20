@@ -30,6 +30,9 @@ python tools/cart/wiki_probe.py <wiki host>        # categories and sizes, to pi
 Edit `lore/<slug>/sources.json`:
 - `license` exactly as the site states it, and `terms`: when you read the terms and what they allow.
 - `seeds`: `{"category": "Perks", "kind": "mechanic", "limit": 300}` or `{"pages": [...], "kind": "item"}`. `kind` is one of item, boss, quest, mechanic, build, lore.
+  - `"in": ["Borderlands 3 characters"]` keeps only pages also in one of those categories (a wiki shared by a series files every game's bosses under one category).
+  - `{"linkedFrom": "List of shields in Borderlands 3"}` takes the articles a list page links to (needs `"via": "api"`).
+- **Fandom** challenges scripts on its article pages and robots.txt, but its robots.txt allows `api.php?action=`. Give the source `"via": "api"` (same rendered pages, read with `action=parse`, one a second) and, since scripts can't read the robots.txt there, `"robots": {"read": "<date, where>", "lines": [...]}` with the rules you read in a browser. Without either, an unreadable robots.txt stops the fetch. Put `Quick Answers` (Fandom's own AI-written box) in `skipSections` too.
 - Take what players ask about (perks, items, bosses, mechanics, quests). Leave out lists of cosmetics, patch-note archives and the like.
 - `steamAppId` for the staleness check later.
 - `skipSections` to drop parts like Gallery, History and Navigation (History on DBD perk pages holds old versions with old numbers).

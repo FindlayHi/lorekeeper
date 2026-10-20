@@ -152,6 +152,7 @@ def user_chunks(s):
 
 ENTITY_CHARS = 2500
 OR_NAME = re.compile(r'\bor "((?:The )?[^"\n]{3,40})"')   # 'Sally Smithson or "The Nurse" is one of 44 Killers'
+QUALIFIED = re.compile(r'(.{3,}?) \([^()]+\)')   # 'Unkempt Harold (Borderlands 3)', 'Grave (enemy)': players say the name without the wiki's qualifier
 
 
 def drop_lines(text, patterns):
@@ -177,7 +178,7 @@ def entity_of(title, text, skip, aliases, start=None):
         out.append(para[:ENTITY_CHARS])
         used += len(para)
     body = '\n\n'.join(out).strip()
-    auto = OR_NAME.findall(body[:1500])
+    auto = OR_NAME.findall(body[:1500]) + [m[1] for m in [QUALIFIED.fullmatch(title)] if m]
     return body, sorted(set(auto) | set(aliases.get(title, [])))
 
 

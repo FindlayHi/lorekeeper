@@ -59,8 +59,17 @@ def problems(src):
         if not s.get('seeds'):
             out.append(f"{n}: no seeds (what to take: {{'category': 'Perks', 'kind': 'mechanic'}} or {{'pages': [...], 'kind': 'item'}})")
         for sd in s.get('seeds', []):
-            if not (sd.get('category') or sd.get('pages')) or 'TODO' in json.dumps(sd):
-                out.append(f"{n}: a seed needs a real 'category' or 'pages'")
+            if not (sd.get('category') or sd.get('pages') or sd.get('linkedFrom')) or 'TODO' in json.dumps(sd):
+                out.append(f"{n}: a seed needs a real 'category', 'pages' or 'linkedFrom'")
+            if sd.get('linkedFrom') and s.get('via') != 'api':
+                out.append(f"{n}: 'linkedFrom' needs \"via\": \"api\"")
+            if not isinstance(sd.get('in', []), list):
+                out.append(f"{n}: a seed's 'in' is a list of categories")
+        if s.get('via', 'html') not in ('html', 'api'):
+            out.append(f"{n}: 'via' is html (article pages, the default) or api (api.php, where robots.txt allows it)")
+        r = s.get('robots')
+        if r is not None and not (isinstance(r, dict) and len(str(r.get('read', ''))) >= 10 and isinstance(r.get('lines'), list) and r['lines']):
+            out.append(f"{n}: 'robots' (rules read by hand) needs 'read' (when and where) and the 'lines' copied")
     return out
 
 
