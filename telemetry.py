@@ -10,7 +10,7 @@ nothing is sent and nothing is asked.
 import json, os, platform, threading, time, urllib.request, uuid
 import config
 
-VERSION = '0.1.15'
+VERSION = '0.1.16'
 FILE = os.path.join(config.DIR, 'telemetry.json')   # {"id", "active": last day counted}
 EVERY = 3 * 3600          # a tray app runs for days: check the day this often
 QUESTION = ('Share anonymous usage counts?\n\n'
