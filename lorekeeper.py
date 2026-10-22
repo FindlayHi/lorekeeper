@@ -792,7 +792,7 @@ def main():
     ok, msg = brain.ready(cfg)
     if not ok:
         print(msg, file=sys.stderr)
-    b = boxmod.Box(cfg['boxSeconds'], lambda: boxmod.font_spec(cfg, popup=True))
+    b = boxmod.Box(cfg['boxSeconds'], lambda: boxmod.font_spec(cfg, popup=True), lambda: cfg['uiScale'])
     app = App(cfg, b)
     try:
         hk = hotkey.Hotkey(cfg['hotkey'], app.down, app.up, app.cancel, app.in_game)

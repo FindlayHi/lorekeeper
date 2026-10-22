@@ -7,6 +7,7 @@ it, Esc on the main panel or a click elsewhere closes everything. Switches and r
 settings panel); actions close it."""
 import tkinter as tk
 import tkinter.font as tkfont
+import win
 from box import BG, INK, DIM, PINK, SKY, GOLD, INDIGO, LILAC, SHADOW, KEY, PX, FONT, font_spec, pick_font
 
 W, FLY_W = 340, 300
@@ -87,53 +88,55 @@ class Pane:
     # drawing
     def draw(self):
         m, c = self.menu, self.c
+        u, mk, px = m.u, m.mk, m.u(PX)
         c.delete('all')
         items = self.items_fn()
         self.rows = []   # (top, bottom, item)
-        x0, y0 = PX, PX
+        x0, y0 = px, px
         x1 = x0 + self.width
-        y = y0 + 14
-        self._pixels(('..x..', '.xxx.', 'xxxxx', '.xxx.', '..x..'), x0 + 18, y, 2, LILAC)
-        c.create_text(x0 + 34, y + 1, text=self.title, font=m.f_head, fill=LILAC, anchor='nw')
-        y += 20
+        pad = u(18)
+        y = y0 + u(14)
+        self._pixels(('..x..', '.xxx.', 'xxxxx', '.xxx.', '..x..'), x0 + pad, y, mk, LILAC)
+        c.create_text(x0 + u(34), y + u(1), text=self.title, font=m.f_head, fill=LILAC, anchor='nw')
+        y += u(20)
         if self.status:
             playing, key = self.status()
-            c.create_text(x0 + 18, y, text=playing, font=m.f_row, fill=SKY, anchor='nw', width=self.width - 36)
-            y = c.bbox('all')[3] + 2
-            c.create_text(x0 + 18, y, text=key, font=m.f_small, fill=DIM, anchor='nw', width=self.width - 36)
-            y = c.bbox('all')[3] + 10
+            c.create_text(x0 + pad, y, text=playing, font=m.f_row, fill=SKY, anchor='nw', width=self.width - 2 * pad)
+            y = c.bbox('all')[3] + u(2)
+            c.create_text(x0 + pad, y, text=key, font=m.f_small, fill=DIM, anchor='nw', width=self.width - 2 * pad)
+            y = c.bbox('all')[3] + u(10)
         rule_y = y
-        y += PX + 6
+        y += px + u(6)
         for it in items:
             if it.header:
-                y += 12
-                c.create_text(x0 + 18, y + 4, text=it.text(), font=m.f_head, fill=PINK, anchor='nw')
-                y += 22
+                y += u(12)
+                c.create_text(x0 + pad, y + u(4), text=it.text(), font=m.f_head, fill=PINK, anchor='nw')
+                y += u(22)
                 continue
             i, top, on = len(self.rows), y, it.is_enabled()
-            c.create_rectangle(x0 + 4, top, x1 - 4, top + m.row, fill=BG, width=0, tags=(f'bg{i}',))
-            right = x1 - 16
-            room = (right - 50 if it.check is not None else right - 36 if (it.radio is not None or it.sub is not None)
-                    else right - 70 if it.note else right) - (x0 + 18)
-            c.create_text(x0 + 18, top + m.row // 2, text=fit(it.text(), m.f_row, room), font=m.f_row, fill=INK if on else DIM,
+            c.create_rectangle(x0 + u(4), top, x1 - u(4), top + m.row, fill=BG, width=0, tags=(f'bg{i}',))
+            right = x1 - u(16)
+            room = (right - u(50) if it.check is not None else right - u(36) if (it.radio is not None or it.sub is not None)
+                    else right - u(70) if it.note else right) - (x0 + pad)
+            c.create_text(x0 + pad, top + m.row // 2, text=fit(it.text(), m.f_row, room), font=m.f_row, fill=INK if on else DIM,
                           anchor='w', tags=(f'tx{i}',))
             if it.check is not None:
-                self._switch(right - 34, top + (m.row - 14) // 2, bool(it.check()), on)
+                self._switch(right - u(34), top + (m.row - u(14)) // 2, bool(it.check()), on)
             elif it.radio is not None:
-                self._radio(right - 12, top + (m.row - 10) // 2, bool(it.radio()))
+                self._radio(right - u(12), top + (m.row - u(10)) // 2, bool(it.radio()))
             elif it.sub is not None:
-                self._pixels(('x..', 'xx.', 'xxx', 'xx.', 'x..'), right - 8, top + (m.row - 10) // 2, 2, LILAC)
+                self._pixels(('x..', 'xx.', 'xxx', 'xx.', 'x..'), right - u(8), top + (m.row - 5 * mk) // 2, mk, LILAC)
             elif it.note:
                 c.create_text(right, top + m.row // 2, text=it.note() if callable(it.note) else it.note, font=m.f_small, fill=DIM, anchor='e')
             self.rows.append((top, top + m.row, it))
             y += m.row
-        y1 = y + 10
-        under = [c.create_rectangle(x0 + dx, y0 + dy, x1 + dx, y1 + dy, fill=SHADOW, width=0) for dx, dy in ((2 * PX, 3 * PX), (3 * PX, 2 * PX))]
-        under += [c.create_rectangle(*r, fill=INK, width=0) for r in ((x0, 0, x1, y0), (x0, y1, x1, y1 + PX), (0, y0, x0, y1), (x1, y0, x1 + PX, y1))]
-        under += [c.create_rectangle(x0, y0, x1, y1, fill=BG, width=0), c.create_rectangle(x0, rule_y, x1, rule_y + PX, fill=INDIGO, width=0)]
+        y1 = y + u(10)
+        under = [c.create_rectangle(x0 + dx, y0 + dy, x1 + dx, y1 + dy, fill=SHADOW, width=0) for dx, dy in ((2 * px, 3 * px), (3 * px, 2 * px))]
+        under += [c.create_rectangle(*r, fill=INK, width=0) for r in ((x0, 0, x1, y0), (x0, y1, x1, y1 + px), (0, y0, x0, y1), (x1, y0, x1 + px, y1))]
+        under += [c.create_rectangle(x0, y0, x1, y1, fill=BG, width=0), c.create_rectangle(x0, rule_y, x1, rule_y + px, fill=INDIGO, width=0)]
         for item in reversed(under):
             c.tag_lower(item)
-        c.config(width=x1 + 3 * PX, height=y1 + 3 * PX)
+        c.config(width=x1 + 3 * px, height=y1 + 3 * px)
         if self.sel is not None and self.sel < len(self.rows):
             self._paint(self.sel, True)
 
@@ -145,14 +148,16 @@ class Pane:
 
     def _switch(self, x, y, on, enabled):
         """A pixel toggle: sky with the knob right when on, indigo with it left when off."""
-        self.c.create_rectangle(x, y, x + 34, y + 14, fill=(SKY if on else INDIGO) if enabled else '#2a2550', outline=INK, width=2)
-        kx = x + 20 if on else x + 2
-        self.c.create_rectangle(kx + 1, y + 3, kx + 11, y + 11, fill=INK if enabled else DIM, width=0)
+        u = self.menu.u
+        self.c.create_rectangle(x, y, x + u(34), y + u(14), fill=(SKY if on else INDIGO) if enabled else '#2a2550', outline=INK, width=u(2))
+        kx = x + u(20) if on else x + u(2)
+        self.c.create_rectangle(kx + u(1), y + u(3), kx + u(11), y + u(11), fill=INK if enabled else DIM, width=0)
 
     def _radio(self, x, y, on):
-        self.c.create_rectangle(x, y, x + 10, y + 10, outline=LILAC, width=2)
+        u = self.menu.u
+        self.c.create_rectangle(x, y, x + u(10), y + u(10), outline=LILAC, width=u(2))
         if on:
-            self.c.create_rectangle(x + 3, y + 3, x + 7, y + 7, fill=GOLD, width=0)
+            self.c.create_rectangle(x + u(3), y + u(3), x + u(7), y + u(7), fill=GOLD, width=0)
 
     # selection
     def _row_at(self, y):
@@ -209,6 +214,11 @@ class Panel:
         self.main = self.flyout = None
         self.fly_for = None   # the main-menu row the flyout belongs to
         self.had_focus, self.away, self.timer = False, 0, None
+        self.s, self.mk = 1.0, 2
+
+    def u(self, n):
+        """n design pixels, in the pixels of the monitor the panel is open on."""
+        return round(n * self.s)
 
     # any thread
     def open(self, x=None, y=None):
@@ -217,27 +227,31 @@ class Panel:
     # Tk thread
     def _open(self, x, y):
         self.close()
-        family, size = pick_font(self.root, *font_spec(self.cfg()), plain=-14)
+        if x is None:
+            x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
+        self.s = win.scale_at(x, y, self.cfg().get('uiScale'))   # the monitor the click was on
+        self.mk = max(1, round(2 * self.s))   # one step of a drawn mark: a whole number of pixels
+        fam, px = font_spec(self.cfg())
+        family, size = pick_font(self.root, fam, px, plain=14, scale=self.s)
         pixel = family == FONT[0]
-        px = abs(size)
+        px = abs(size)   # pixels now, at this scale
+        d = px / self.s  # and in design pixels, for the size of things around the text
         self.f_row = (family, -px)
         self.f_small = (family, -round(px * 18 / 22))
         have = set(tkfont.families(self.root))
         if pixel and 'Press Start 2P' in have:
-            self.f_head = ('Press Start 2P', -8)
+            self.f_head = ('Press Start 2P', -max(1, round(8 * self.s)))
         else:   # a font of your own for the headings too, a little smaller and bold
-            self.f_head = (family, -round(px * 0.6), 'bold') if not pixel else ('Consolas', -11, 'bold')
-        self.row = max(ROW, tkfont.Font(font=self.f_row).metrics('linespace') + 8)
-        self.scale = max(1, px / abs(FONT[1])) if pixel else max(1, px / 15)   # wider panels for bigger text
-        self.w, self.fly_w = round(W * self.scale), round(FLY_W * self.scale)
+            self.f_head = (family, -round(px * 0.6), 'bold') if not pixel else ('Consolas', -round(11 * self.s), 'bold')
+        self.row = max(self.u(ROW), tkfont.Font(font=self.f_row).metrics('linespace') + self.u(8))
+        grow = max(1, d / abs(FONT[1])) if pixel else max(1, d / 15)   # wider panels for bigger text
+        self.w, self.fly_w = self.u(W * grow), self.u(FLY_W * grow)
         self.had_focus, self.away = False, 0
         self.main = Pane(self, self.items_fn, self.w, 'LOREKEEPER', self.status_fn)
         cw, ch = self.main.size()
-        if x is None:
-            x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
         sx, sy = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        px = min(max(0, x - cw + 8), sx - cw - self.fly_w + 16)   # leave room on the right for a sub-menu to open there
-        py = y - ch - 6 if y - ch - 6 > 0 else min(y + 6, sy - ch)   # above the cursor (the tray is at the bottom), else below
+        px = min(max(0, x - cw + self.u(8)), sx - cw - self.fly_w + self.u(16))   # leave room on the right for a sub-menu to open there
+        py = y - ch - self.u(6) if y - ch - self.u(6) > 0 else min(y + self.u(6), sy - ch)   # above the cursor (the tray is at the bottom), else below
         self.main.show(px, py)
         try:   # a tray click lets this process take the foreground; without it Esc and click-away can't work
             import ctypes
@@ -280,11 +294,11 @@ class Panel:
         self.flyout = Pane(self, it.sub, self.fly_w, it.text().upper())
         fw, fh = self.flyout.size()
         mx, my = self.main.win.winfo_rootx(), self.main.win.winfo_rooty()
-        top = my + self.main.rows[self.main.sel][0] - 40   # level with the row it came from
+        top = my + self.main.rows[self.main.sel][0] - self.u(40)   # level with the row it came from
         sx, sy = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        right = mx + self.main.win.winfo_width() - 16   # over the main menu's border and shadow, clear of its text
-        fx = right if right + fw <= sx else max(0, mx - fw + 16)
-        self.flyout.show(fx, max(0, min(top, sy - fh - 8)))
+        right = mx + self.main.win.winfo_width() - self.u(16)   # over the main menu's border and shadow, clear of its text
+        fx = right if right + fw <= sx else max(0, mx - fw + self.u(16))
+        self.flyout.show(fx, max(0, min(top, sy - fh - self.u(8))))
         self.flyout.win.lift(self.main.win)   # over the main menu's edge, like a real flyout
         if focus:
             self.flyout.win.focus_force()

@@ -45,3 +45,20 @@ def test_default_is_the_bundled_pixel_font():
         assert box.pick_font(root, '', 0)[0] == box.FONT[0]   # not the Consolas fallback
     finally:
         root.destroy()
+
+
+def test_scale_follows_windows_unless_overridden():
+    import win
+    assert win.scale_at(0, 0, 1.5) == 1.5
+    assert win.scale_at(0, 0, 99) == 8.0                  # capped
+    assert win.scale_at(0, 0, 0) > 0 and win.scale_at(0, 0, 'x') > 0   # 0 or junk: ask Windows, never fail
+
+
+def test_pick_font_scales_the_size():
+    import tkinter as tk
+    root = tk.Tk()
+    try:
+        assert box.pick_font(root, '', 0, scale=2)[1] == 2 * box.pick_font(root, '', 0)[1]
+        assert box.pick_font(root, '', 30, scale=1.5)[1] == -45
+    finally:
+        root.destroy()
