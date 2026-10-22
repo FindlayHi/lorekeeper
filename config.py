@@ -29,6 +29,10 @@ DEFAULTS = {
     'rate': 0,                   # speed, -10..10
     'box': True,                 # show the question and answer in a small box too
     'boxSeconds': 12,
+    'font': '',                  # a font family for the whole app, tray and answer box ('' = the bundled pixel font; tray → Reset font)
+    'fontSize': 0,               # its size in pixels (0 = the usual size for that font)
+    'boxFont': '',               # the answer box's own font; '' = follow 'font'
+    'boxFontSize': 0,            # the answer box's own size; 0 = follow 'fontSize'
     'boxWhileSpeaking': False,   # True: the box stays up while Lorekeeper is still talking, so you can read along; boxSeconds start after
     'spoilers': False,           # True: answers ignore your progress notes
     'screen': True,              # "what is this item" sends a screenshot

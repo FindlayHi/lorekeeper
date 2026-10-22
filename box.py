@@ -16,6 +16,7 @@ PX = 4                   # one pixel of the pixel border, as on the page
 TEXT_W = 420             # wrap width of the question and answer
 PAD = 20
 FONT, FALLBACK = ('VT323', -22), ('Consolas', -15)   # the page's pixel font (assets/fonts), in pixels
+CAP, CAPS = 0.7, {'VT323': 0.55}   # a font's capital height as a share of its pixel size (VT323's are short): where a drawn mark centres
 # A leading emoji names a state; the pixel fonts have no emoji, so it becomes a drawn icon instead of a box.
 MIC = ('....nnnn....', '...nssssn...', '...nswssn...', '...nssssn...', '...nssssn...', '.n.nssssn.n.',
        '.n.nbbbbn.n.', '..n.nnnn.n..', '...nn..nn...', '.....nn.....', '.....nn.....', '...nnnnnn...')   # docs/img/mic.svg
@@ -44,8 +45,30 @@ def load_fonts():
         pass
 
 
+def font_spec(cfg, popup=False):
+    """(family, pixels) the config asks for: the tray follows font/fontSize, the answer box boxFont/boxFontSize and,
+    where those are unset, the same. ('', 0) means the bundled pixel font at its usual size."""
+    family = (popup and cfg.get('boxFont') or cfg.get('font') or '')
+    size = popup and cfg.get('boxFontSize') or cfg.get('fontSize') or 0
+    try:
+        size = max(0, abs(int(size)))
+    except (TypeError, ValueError):
+        size = 0
+    return str(family).strip(), size
+
+
+def pick_font(root, family, size, plain=FALLBACK[1]):
+    """(family, -pixels) to draw with: the asked-for family if Windows has it, else the pixel font, else Consolas.
+    `plain` is the usual size for any font that isn't the pixel one."""
+    have = {f.lower(): f for f in tkfont.families(root)}
+    name = have.get(family.lower()) if family else None
+    if not name:
+        name = FONT[0] if FONT[0] in have else FALLBACK[0]
+    return name, -(size or abs(FONT[1] if name == FONT[0] else plain))
+
+
 class Box:
-    def __init__(self, seconds=12):
+    def __init__(self, seconds=12, fonts=None):
         load_fonts()
         self.root = tk.Tk()
         self.root.withdraw()
@@ -58,8 +81,8 @@ class Box:
             self.bg = SHADOW
         self.root.configure(bg=self.bg)
         # one font at one size for every word in the box, as the page's dialogue; colour alone tells who is talking
-        self.font = tkfont.Font(self.root, font=FONT if FONT[0] in tkfont.families(self.root) else FALLBACK)
-        self.line = self.font.metrics('linespace')
+        self.fonts, self.spec, self.font = fonts or (lambda: ('', 0)), None, None
+        self._set_font()
         self.c = tk.Canvas(self.root, bg=self.bg, highlightthickness=0, bd=0)
         self.c.pack()
         self.root.bind('<Button-1>', self._click)
@@ -68,6 +91,20 @@ class Box:
         self.title = False
         self.action, self.hint = None, ''   # a click runs action (labelled hint) instead of copying
         self.root.after(50, self._pump)
+
+    def _set_font(self):
+        """(Re)build the box's font when the config's choice has changed since the last time it was drawn."""
+        spec = tuple(self.fonts())
+        if spec != self.spec:
+            self.spec = spec
+            family, size = pick_font(self.root, *spec)
+            self.font = tkfont.Font(self.root, family=family, size=size)   # a negative size is pixels
+            self.line = self.font.metrics('linespace')
+
+    def _mid(self):
+        """Where the top of a 10-pixel drawn mark sits to centre on a line's capital letters, whatever the font."""
+        f = self.font
+        return round(f.metrics('ascent') - CAPS.get(f.cget('family'), CAP) * abs(f.cget('size')) / 2 - 5)
 
     # any thread
     def show(self, question='', answer='', stay=False, title=False, on_click=None, hint=''):
@@ -124,11 +161,12 @@ class Box:
     def _draw(self):
         c = self.c
         c.delete('all')
+        self._set_font()
         state, q = plain(self.question)
         _, a = plain(self.answer)
         done = bool(a.strip('.… '))            # a real answer, not the '…' while thinking
         x0, y0 = PX, PX                         # the navy panel's top-left; the border sits in the PX around it
-        f, mid = self.font, (self.line - 10) // 2   # mid: where a 10-pixel drawn mark sits centred on a line of text
+        f, mid = self.font, self._mid()   # mid: where a 10-pixel drawn mark sits centred on the line's capitals
         tag_w = max(f.measure(t) for t in ('YOU', 'LK')) + 5 + 6 + 12   # tag, gap, ▸, gap
         tx = x0 + PAD + tag_w                   # text column, hanging past the YOU ▸ / LK ▸ tags and the mic
         iw = PAD + tag_w + TEXT_W + PAD

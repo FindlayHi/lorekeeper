@@ -7,10 +7,10 @@ it, Esc on the main panel or a click elsewhere closes everything. Switches and r
 settings panel); actions close it."""
 import tkinter as tk
 import tkinter.font as tkfont
-from box import BG, INK, DIM, PINK, SKY, GOLD, INDIGO, LILAC, SHADOW, KEY, PX
+from box import BG, INK, DIM, PINK, SKY, GOLD, INDIGO, LILAC, SHADOW, KEY, PX, FONT, font_spec, pick_font
 
 W, FLY_W = 340, 300
-ROW = 30
+ROW = 30   # the least a row is, at the usual size; a bigger font makes rows (and the panel) taller and wider
 HOVER = '#1b1452'
 
 
@@ -111,22 +111,22 @@ class Pane:
                 y += 22
                 continue
             i, top, on = len(self.rows), y, it.is_enabled()
-            c.create_rectangle(x0 + 4, top, x1 - 4, top + ROW, fill=BG, width=0, tags=(f'bg{i}',))
+            c.create_rectangle(x0 + 4, top, x1 - 4, top + m.row, fill=BG, width=0, tags=(f'bg{i}',))
             right = x1 - 16
             room = (right - 50 if it.check is not None else right - 36 if (it.radio is not None or it.sub is not None)
                     else right - 70 if it.note else right) - (x0 + 18)
-            c.create_text(x0 + 18, top + ROW // 2, text=fit(it.text(), m.f_row, room), font=m.f_row, fill=INK if on else DIM,
+            c.create_text(x0 + 18, top + m.row // 2, text=fit(it.text(), m.f_row, room), font=m.f_row, fill=INK if on else DIM,
                           anchor='w', tags=(f'tx{i}',))
             if it.check is not None:
-                self._switch(right - 34, top + 8, bool(it.check()), on)
+                self._switch(right - 34, top + (m.row - 14) // 2, bool(it.check()), on)
             elif it.radio is not None:
-                self._radio(right - 12, top + 10, bool(it.radio()))
+                self._radio(right - 12, top + (m.row - 10) // 2, bool(it.radio()))
             elif it.sub is not None:
-                self._pixels(('x..', 'xx.', 'xxx', 'xx.', 'x..'), right - 8, top + 10, 2, LILAC)
+                self._pixels(('x..', 'xx.', 'xxx', 'xx.', 'x..'), right - 8, top + (m.row - 10) // 2, 2, LILAC)
             elif it.note:
-                c.create_text(right, top + ROW // 2, text=it.note() if callable(it.note) else it.note, font=m.f_small, fill=DIM, anchor='e')
-            self.rows.append((top, top + ROW, it))
-            y += ROW
+                c.create_text(right, top + m.row // 2, text=it.note() if callable(it.note) else it.note, font=m.f_small, fill=DIM, anchor='e')
+            self.rows.append((top, top + m.row, it))
+            y += m.row
         y1 = y + 10
         under = [c.create_rectangle(x0 + dx, y0 + dy, x1 + dx, y1 + dy, fill=SHADOW, width=0) for dx, dy in ((2 * PX, 3 * PX), (3 * PX, 2 * PX))]
         under += [c.create_rectangle(*r, fill=INK, width=0) for r in ((x0, 0, x1, y0), (x0, y1, x1, y1 + PX), (0, y0, x0, y1), (x1, y0, x1 + PX, y1))]
@@ -204,8 +204,8 @@ class Pane:
 class Panel:
     """Panel(root, items_fn, status_fn): items_fn() -> [Item] for the main menu; status_fn() -> (playing, hotkeys) lines."""
 
-    def __init__(self, root, items_fn, status_fn):
-        self.root, self.items_fn, self.status_fn = root, items_fn, status_fn
+    def __init__(self, root, items_fn, status_fn, cfg=dict):
+        self.root, self.items_fn, self.status_fn, self.cfg = root, items_fn, status_fn, cfg
         self.main = self.flyout = None
         self.fly_for = None   # the main-menu row the flyout belongs to
         self.had_focus, self.away, self.timer = False, 0, None
@@ -217,18 +217,26 @@ class Panel:
     # Tk thread
     def _open(self, x, y):
         self.close()
+        family, size = pick_font(self.root, *font_spec(self.cfg()), plain=-14)
+        pixel = family == FONT[0]
+        px = abs(size)
+        self.f_row = (family, -px)
+        self.f_small = (family, -round(px * 18 / 22))
         have = set(tkfont.families(self.root))
-        pixel = 'VT323' if 'VT323' in have else 'Consolas'
-        self.f_head = ('Press Start 2P', -8) if 'Press Start 2P' in have else ('Consolas', -11, 'bold')
-        self.f_row = (pixel, -22 if pixel == 'VT323' else -14)
-        self.f_small = (pixel, -18 if pixel == 'VT323' else -12)
+        if pixel and 'Press Start 2P' in have:
+            self.f_head = ('Press Start 2P', -8)
+        else:   # a font of your own for the headings too, a little smaller and bold
+            self.f_head = (family, -round(px * 0.6), 'bold') if not pixel else ('Consolas', -11, 'bold')
+        self.row = max(ROW, tkfont.Font(font=self.f_row).metrics('linespace') + 8)
+        self.scale = max(1, px / abs(FONT[1])) if pixel else max(1, px / 15)   # wider panels for bigger text
+        self.w, self.fly_w = round(W * self.scale), round(FLY_W * self.scale)
         self.had_focus, self.away = False, 0
-        self.main = Pane(self, self.items_fn, W, 'LOREKEEPER', self.status_fn)
+        self.main = Pane(self, self.items_fn, self.w, 'LOREKEEPER', self.status_fn)
         cw, ch = self.main.size()
         if x is None:
             x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
         sx, sy = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        px = min(max(0, x - cw + 8), sx - cw - FLY_W + 16)   # leave room on the right for a sub-menu to open there
+        px = min(max(0, x - cw + 8), sx - cw - self.fly_w + 16)   # leave room on the right for a sub-menu to open there
         py = y - ch - 6 if y - ch - 6 > 0 else min(y + 6, sy - ch)   # above the cursor (the tray is at the bottom), else below
         self.main.show(px, py)
         try:   # a tray click lets this process take the foreground; without it Esc and click-away can't work
@@ -269,7 +277,7 @@ class Panel:
             return
         self.close_flyout()
         self.fly_for = it
-        self.flyout = Pane(self, it.sub, FLY_W, it.text().upper())
+        self.flyout = Pane(self, it.sub, self.fly_w, it.text().upper())
         fw, fh = self.flyout.size()
         mx, my = self.main.win.winfo_rootx(), self.main.win.winfo_rooty()
         top = my + self.main.rows[self.main.sel][0] - 40   # level with the row it came from

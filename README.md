@@ -177,6 +177,8 @@ Everything per game is a plain file you can edit, in `%APPDATA%\Lorekeeper\games
 | `whisper` / `whisperDevice` | `base.en` / `cpu` | `small.en` hears names better; `cuda` with an NVIDIA GPU |
 | `spoilers` / `screen` | `false` / `true` | also in the tray |
 | `boxWhileSpeaking` / `boxSeconds` | `false` / `12` | tray → **Keep it up while talking**: the box stays until the voice has finished, so you can read along; then it closes after `boxSeconds` |
+| `font` / `fontSize` | *(pixel font)* / `0` | any installed font family, and its size in pixels, for the whole app: tray and answer box. `0` is the usual size for that font. tray → **Reset font** clears these |
+| `boxFont` / `boxFontSize` | *(follow `font`)* | the answer box's own font and size; whichever is blank follows `font` / `fontSize` |
 | `telemetry` | *(asked on first run)* | anonymous usage counts; also in the tray. See [Privacy](#privacy--usage-counts) |
 </details>
 
