@@ -33,6 +33,7 @@ if FROZEN:
 import brain, capture, commands, config, games, gear, listen, lookup, notes, icons, rag, romm, telemetry, updater, voice  # noqa: E402
 
 LOG = os.path.join(config.DIR, 'log.jsonl')
+FONT_KEYS = ('font', 'fontSize', 'boxFont', 'boxFontSize')   # tray → Reset font puts these back to the bundled pixel font
 TURN_SECS = 600
 
 def _rm(path):
@@ -477,6 +478,7 @@ def tray(app, box):
         pystray.MenuItem("This game's notes", lambda *_: app.game and (notes.add(app.game, 'notes opened') if not os.path.exists(notes.path(app.game)) else None,
                                                                      os.startfile(notes.path(app.game))), enabled=lambda _: bool(app.game)),
         pystray.MenuItem('Share anonymous usage counts', flip('telemetry'), checked=lambda _: app.cfg['telemetry'] is True),
+        pystray.MenuItem('Reset font', lambda *_: reset_font(), enabled=lambda _: any(app.cfg[k] for k in FONT_KEYS)),
         pystray.MenuItem('Settings file', lambda *_: (config.save(app.cfg), os.startfile(config.FILE))),
         pystray.MenuItem('Ask log', lambda *_: os.path.exists(LOG) and os.startfile(LOG)),
         pystray.MenuItem('Quit', quit_))
@@ -621,6 +623,11 @@ def tray(app, box):
         rows.append(Item('Test', action=test_ai, note=lambda: brain.name(app.cfg)))
         return rows
 
+    def reset_font():
+        for k in FONT_KEYS:
+            app.cfg[k] = config.DEFAULTS[k]
+        config.save(app.cfg)
+
     def notes_open():
         if not os.path.exists(notes.path(app.game)):
             notes.add(app.game, 'notes opened')
@@ -648,6 +655,7 @@ def tray(app, box):
             Item('MORE', header=True),
             Item('RomM', sub=romm_page) if romm.connected() else Item('Connect RomM', action=connect_romm, note='pair'),
             Item('Share anonymous usage counts', action=flip('telemetry'), check=lambda: app.cfg['telemetry'] is True),
+            Item('Reset font', action=reset_font, enabled=lambda: any(app.cfg[k] for k in FONT_KEYS), note='default'),
             Item('Settings file', action=lambda: (config.save(app.cfg), os.startfile(config.FILE))),
             Item('Ask log', action=lambda: os.path.exists(LOG) and os.startfile(LOG)),
             Item('Check for updates', action=check_now, note=telemetry.VERSION),
@@ -668,7 +676,7 @@ def tray(app, box):
     def status():
         playing = f"Playing: {app.game['name']}" if app.game else 'No game in front'
         return playing, f'Hold {hotkey.pretty(app.hk.combo)} to ask · {hotkey.pretty(app.lk.combo)} listen mode'
-    pnl = Panel(box.root, items, status)
+    pnl = Panel(box.root, items, status, lambda: app.cfg)
     icon.on_click = lambda: pnl.open()
     icon.run_detached()
 
@@ -784,7 +792,7 @@ def main():
     ok, msg = brain.ready(cfg)
     if not ok:
         print(msg, file=sys.stderr)
-    b = boxmod.Box(cfg['boxSeconds'])
+    b = boxmod.Box(cfg['boxSeconds'], lambda: boxmod.font_spec(cfg, popup=True), lambda: cfg['uiScale'])
     app = App(cfg, b)
     try:
         hk = hotkey.Hotkey(cfg['hotkey'], app.down, app.up, app.cancel, app.in_game)

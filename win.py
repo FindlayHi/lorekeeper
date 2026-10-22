@@ -57,3 +57,38 @@ def monitors():
     proc = ctypes.WINFUNCTYPE(ctypes.c_int, W.HMONITOR, W.HDC, ctypes.POINTER(W.RECT), W.LPARAM)(each)
     user32.EnumDisplayMonitors(None, None, proc, 0)
     return out
+
+
+def per_monitor_dpi():
+    """Make windows made by this thread from now on per-monitor DPI aware (v2): drawn at the screen's real pixels instead of
+    being drawn small and stretched by Windows, which is what made the box large and soft on a scaled or upscaled screen.
+    Only this thread: the hotkey, capture and tray threads keep the coordinates they have always had."""
+    if sys.platform != 'win32':
+        return
+    try:
+        user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+        user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))   # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    except Exception:
+        pass
+
+
+def scale_at(x, y, override=0):
+    """Windows' scale for the monitor at (x, y) as a factor (200% -> 2.0), or `override` if that is set (> 0). 1.0 if unknown."""
+    try:
+        if float(override) > 0:
+            return min(float(override), 8.0)
+    except (TypeError, ValueError):
+        pass
+    if sys.platform != 'win32':
+        return 1.0
+    try:
+        user32.MonitorFromPoint.restype, user32.MonitorFromPoint.argtypes = ctypes.c_void_p, [W.POINT, W.DWORD]
+        shcore = ctypes.windll.shcore
+        shcore.GetDpiForMonitor.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint)]
+        mon = user32.MonitorFromPoint(W.POINT(int(x), int(y)), 2)   # MONITOR_DEFAULTTONEAREST
+        dx, dy = ctypes.c_uint(), ctypes.c_uint()
+        shcore.GetDpiForMonitor(mon, 0, ctypes.byref(dx), ctypes.byref(dy))   # MDT_EFFECTIVE_DPI
+        return dx.value / 96 if dx.value else 1.0
+    except Exception:
+        return 1.0
