@@ -35,3 +35,13 @@ def test_unknown_family_falls_back():
         assert box.pick_font(root, 'No Such Font 9000', 30)[1] == -30
     finally:
         root.destroy()
+
+
+def test_default_is_the_bundled_pixel_font():
+    import tkinter as tk
+    box.load_fonts()
+    root = tk.Tk()
+    try:
+        assert box.pick_font(root, '', 0)[0] == box.FONT[0]   # not the Consolas fallback
+    finally:
+        root.destroy()

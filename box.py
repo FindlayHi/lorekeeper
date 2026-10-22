@@ -63,7 +63,7 @@ def pick_font(root, family, size, plain=FALLBACK[1]):
     have = {f.lower(): f for f in tkfont.families(root)}
     name = have.get(family.lower()) if family else None
     if not name:
-        name = FONT[0] if FONT[0] in have else FALLBACK[0]
+        name = have.get(FONT[0].lower(), FALLBACK[0])
     return name, -(size or abs(FONT[1] if name == FONT[0] else plain))
 
 
