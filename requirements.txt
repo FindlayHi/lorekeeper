@@ -3,9 +3,9 @@ sounddevice>=0.5
 numpy
 comtypes>=1.4
 pystray>=0.19
-pillow>=10
+pillow>=13.0.0
 dxcam>=0.0.5
-edge-tts>=7
+edge-tts>=7.3.1
 kokoro-onnx>=0.4
 soundfile
 keyring
