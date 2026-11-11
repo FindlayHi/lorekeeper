@@ -223,6 +223,10 @@ Never your games, questions, answers, notes, screenshots, file paths, user name,
 
 **To change your answer:** tray → **Share anonymous usage counts**, or `"telemetry": true/false` in the settings file. Setting the `DO_NOT_TRACK=1` environment variable also turns it off and skips the question. Off means nothing is sent and no id is made.
 
+## Licence
+
+The code is [MIT](LICENSE). The lore packs keep the licence of the wiki each one was built from (it is listed in the pack's `lore.json`), and some of those are non-commercial. The bundled fonts are under the SIL Open Font License; their licence files sit beside them.
+
 <br>
 
 <p align="center"><sub>Lorekeeper is free and open source. Not affiliated with Anthropic or any game publisher.</sub></p>
