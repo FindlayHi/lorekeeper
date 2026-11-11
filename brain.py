@@ -106,6 +106,36 @@ def claude_ok():
     return bool(shutil.which('claude'))
 
 
+def claude_auth():
+    """What `claude auth status` says ({'loggedIn': True, 'authMethod': 'claude.ai', 'subscriptionType': 'pro', …}), or {}
+    when Claude Code is missing or too old to say. Never kept or sent: it carries the account's email."""
+    claude = shutil.which('claude')
+    if not claude:
+        return {}
+    try:
+        out = subprocess.run([claude, 'auth', 'status'], capture_output=True, text=True, timeout=20,   # signed out exits 1, same JSON
+                             creationflags=0x08000000 if sys.platform == 'win32' else 0).stdout
+        a = json.loads(out)
+        return a if isinstance(a, dict) else {}
+    except Exception:
+        return {}
+
+
+def claude_state():
+    """(state, note) for the tray and first run: 'missing'; 'signed-out'; 'api-key' (note: where the key comes from; asks
+    bill that key, not the plan); 'plan' (note: 'pro', 'max'…); or 'unknown' (a Claude Code too old to say)."""
+    if not claude_ok():
+        return 'missing', ''
+    a = claude_auth()
+    if not a:
+        return 'unknown', ''
+    if not a.get('loggedIn'):
+        return 'signed-out', ''
+    if a.get('authMethod') == 'api_key':
+        return 'api-key', a.get('apiKeySource') or 'an API key'
+    return 'plan', a.get('subscriptionType') or ''
+
+
 def ready(cfg=None):
     """(ok, what to tell the player). Cheap: no request is made."""
     cfg = CFG if cfg is None else cfg
@@ -364,7 +394,7 @@ def ask(p, text, shots=(), on_text=lambda s: None, keep=None):
     if not answer and p.returncode:
         p.errors.seek(0)
         err = p.errors.read(300)
-        answer = 'Claude Code is signed out. Run claude in a terminal to sign in.' if re.search(r'log ?in|auth', err, re.I) else f'Claude failed: {err[:150]}'
+        answer = 'Claude Code is signed out. Sign in from the tray: AI, Sign in to Claude.' if re.search(r'log ?in|auth', err, re.I) else f'Claude failed: {err[:150]}'
     return answer or 'No answer came back.', usd
 
 

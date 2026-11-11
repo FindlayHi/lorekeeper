@@ -367,7 +367,7 @@ class App:
 
 
 def tray(app, box):
-    import art, hotkey, pystray
+    import art, firstrun, hotkey, pystray
 
     def pin_to(g):
         def do(*_):
@@ -597,6 +597,41 @@ def tray(app, box):
                 fetch_models()
         box.root.after(0, ask)
 
+    claude_acct = {'state': None, 'note': '', 'at': 0}   # `claude auth status`, asked off the Tk thread
+
+    def check_claude():
+        def run():
+            claude_acct.update(zip(('state', 'note'), brain.claude_state()))
+            redraw()
+        claude_acct['at'] = time.time()
+        threading.Thread(target=run, daemon=True).start()
+
+    def claude_window(start):
+        def do():
+            start()
+            box.show('Claude Code', 'Finish in the window that opened. Lorekeeper notices when you are signed in.', stay=True, title=True)
+            firstrun.wait_for_sign_in(box, check_claude)
+        return do
+
+    def claude_rows():
+        if time.time() - claude_acct['at'] > 10:   # each time the page is looked at, not on every redraw
+            check_claude()
+        s, note = claude_acct['state'], claude_acct['note']
+        rows = [Item('CLAUDE ACCOUNT', header=True)]
+        if s is None:
+            return rows + [Item('Checking…', enabled=False)]
+        if s == 'missing':
+            return rows + [Item('Install Claude Code…', action=claude_window(firstrun.install_claude), note='needed')]
+        if s == 'unknown':   # too old for `claude auth status`: the installer updates it, then signs in
+            return rows + [Item('Update Claude Code…', action=claude_window(firstrun.install_claude), note='old')]
+        if s == 'signed-out':
+            return rows + [Item('Sign in to Claude…', action=claude_window(firstrun.sign_in_claude), note='signed out')]
+        if s == 'api-key':
+            return rows + [Item('Using an API key', action=lambda: box.show('Claude Code', firstrun.api_key_warning(note), title=True),
+                                note='not your plan')]
+        return rows + [Item('Signed in', enabled=False, note=note.title() or 'yes'),
+                       Item('Switch account…', action=firstrun.sign_in_claude)]
+
     def test_ai():
         def run():
             box.show('AI', f'Testing {brain.name()}…', stay=True, title=True)
@@ -620,6 +655,8 @@ def tray(app, box):
             else:
                 rows.append(Item(app.cfg.get('aiModel') or 'No models found', enabled=False, note='' if app.cfg.get('aiModel') else 'none'))
             rows.append(Item('API key…', action=set_ai_key, note=lambda: 'set' if brain.key() else 'none'))
+        else:
+            rows += claude_rows()
         rows.append(Item('Test', action=test_ai, note=lambda: brain.name(app.cfg)))
         return rows
 
