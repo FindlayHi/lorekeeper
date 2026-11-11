@@ -25,6 +25,16 @@ def read(game, most=40):
     return '\n'.join(lines[-most:])
 
 
+def touch(game):
+    """The notes file, made with only its heading if it isn't there yet: opening it from the tray adds no note for the AI to read."""
+    os.makedirs(FOLDER, exist_ok=True)
+    p = path(game)
+    if not os.path.exists(p):
+        with open(p, 'a', encoding='utf-8') as f:
+            f.write(f"# {game['name']}\n\n")
+    return p
+
+
 def add(game, line):
     os.makedirs(FOLDER, exist_ok=True)
     p = path(game)

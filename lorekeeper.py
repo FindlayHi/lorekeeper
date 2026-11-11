@@ -582,8 +582,7 @@ def tray(app, box):
         pystray.MenuItem('Keep it up while talking', flip('boxWhileSpeaking'), checked=lambda _: app.cfg['boxWhileSpeaking'],
                          enabled=lambda _: app.cfg['box']),
         pystray.MenuItem('Use the screen', flip('screen'), checked=lambda _: app.cfg['screen']),
-        pystray.MenuItem("This game's notes", lambda *_: app.game and (notes.add(app.game, 'notes opened') if not os.path.exists(notes.path(app.game)) else None,
-                                                                     os.startfile(notes.path(app.game))), enabled=lambda _: bool(app.game)),
+        pystray.MenuItem("This game's notes", lambda *_: app.game and os.startfile(notes.touch(app.game)), enabled=lambda _: bool(app.game)),
         pystray.MenuItem('Share anonymous usage counts', flip('telemetry'), checked=lambda _: app.cfg['telemetry'] is True),
         pystray.MenuItem('Reset font', lambda *_: reset_font(), enabled=lambda _: any(app.cfg[k] for k in FONT_KEYS)),
         pystray.MenuItem('Settings file', lambda *_: (config.save(app.cfg), os.startfile(config.FILE))),
@@ -736,9 +735,7 @@ def tray(app, box):
         config.save(app.cfg)
 
     def notes_open():
-        if not os.path.exists(notes.path(app.game)):
-            notes.add(app.game, 'notes opened')
-        os.startfile(notes.path(app.game))
+        os.startfile(notes.touch(app.game))
 
     def items():
         up = getattr(app, 'updater', None) and app.updater.available
