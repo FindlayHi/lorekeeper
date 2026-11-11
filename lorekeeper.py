@@ -25,11 +25,68 @@ if sys.platform == 'win32':
             pass
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 FROZEN = getattr(sys, 'frozen', False)   # the installed app (PyInstaller): no console, so output goes to a log file
+LOG_MOST = 2_000_000   # bytes: past this, app.log and log.jsonl keep their newest half (at startup)
+
+
+def trim(path, most=LOG_MOST):
+    """A log that has grown past `most` keeps only its newest half, cut at a line, so it never fills the disk."""
+    try:
+        if os.path.getsize(path) <= most:
+            return
+        with open(path, 'rb') as f:
+            f.seek(-(most // 2), 2)
+            tail = f.read()
+        with open(path, 'wb') as f:
+            f.write(tail[tail.find(b'\n') + 1:])
+    except OSError as e:
+        print('trim:', e)
+
+
+class Stamped:
+    """app.log as stdout and stderr: every line starts with the time, so a crash can be placed after the fact.
+    print from any module and tracebacks alike; lines from two threads never share a stamp."""
+
+    def __init__(self, f):
+        self.f, self.fresh, self.lock = f, True, threading.Lock()
+
+    def write(self, s):
+        with self.lock:
+            for piece in s.splitlines(True):
+                if self.fresh:
+                    self.f.write(time.strftime('%Y-%m-%d %H:%M:%S '))
+                self.f.write(piece)
+                self.fresh = piece.endswith(('\n', '\r'))
+        return len(s)
+
+    def flush(self):
+        self.f.flush()
+
+    def __getattr__(self, k):   # encoding, fileno, isatty…: the file's own
+        return getattr(self.f, k)
+
+
+def uncaught():
+    """Errors nothing caught, on any thread, go to stderr (app.log when installed) with their traceback."""
+    def on_thread(a):
+        if a.exc_type is not SystemExit:
+            print(f'uncaught in thread {a.thread.name if a.thread else "?"}:', file=sys.stderr)
+            traceback.print_exception(a.exc_type, a.exc_value, a.exc_traceback, file=sys.stderr)
+            sys.stderr.flush()
+
+    def on_main(t, e, tb):
+        print('uncaught:', file=sys.stderr)
+        traceback.print_exception(t, e, tb, file=sys.stderr)
+        sys.stderr.flush()
+    threading.excepthook, sys.excepthook = on_thread, on_main
+
+
 if FROZEN:
     _logdir = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'Lorekeeper')
     os.makedirs(_logdir, exist_ok=True)
-    sys.stdout = sys.stderr = open(os.path.join(_logdir, 'app.log'), 'a', encoding='utf-8', buffering=1)
-    print(f"--- {__import__('time').strftime('%Y-%m-%d %H:%M:%S')} Lorekeeper starting", flush=True)
+    trim(os.path.join(_logdir, 'app.log'))
+    sys.stdout = sys.stderr = Stamped(open(os.path.join(_logdir, 'app.log'), 'a', encoding='utf-8', buffering=1))
+    print('--- Lorekeeper starting', flush=True)
+uncaught()
 import brain, capture, commands, config, games, gear, listen, lookup, notes, icons, rag, romm, telemetry, updater, voice  # noqa: E402
 
 LOG = os.path.join(config.DIR, 'log.jsonl')
@@ -838,6 +895,7 @@ def main():
         ctypes.windll.user32.MessageBoxW(None, 'Lorekeeper is already running: look for the pixel book in your tray '
                                                '(click the ^ arrow by the clock if it is hidden).', 'Lorekeeper', 0x40)
         return
+    trim(LOG)
     import box as boxmod, hotkey
     ok, msg = brain.ready(cfg)
     if not ok:
