@@ -130,7 +130,7 @@ Older games also get [StrategyWiki](https://strategywiki.org) walkthrough chapte
 
 Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd> (or tray → **Listen mode**, or say *"start listening"*). Start each question with **"Lorekeeper, …"**. For 8 seconds after an answer, ask a follow-up without the name. Say just *"Lorekeeper"* and it answers "Yes?" and waits.
 
-The mic stays open, but Whisper only runs when someone's talking, so it costs almost nothing while you're quiet. It ignores everything while Lorekeeper is speaking (so it doesn't hear itself through speakers), while you hold the hotkey, and when no game is in front. Say *"stop listening"* or press the key again to turn it off.
+The mic is open only while a game is in front (it closes about 10 seconds after you leave the game), and Whisper only runs when someone's talking, so it costs almost nothing while you're quiet. It ignores everything while Lorekeeper is speaking (so it doesn't hear itself through speakers), while you hold the hotkey, and when no game is in front. Say *"stop listening"* or press the key again to turn it off.
 </details>
 
 <details>
@@ -148,7 +148,7 @@ Slots understand the usual words: helmet or head, chest piece, off hand, second 
 <summary><b>🧠 Memory and notes, in detail</b></summary>
 <br>
 
-- **Screen:** the last 5 seconds at one frame a second, plus 10 minutes at one frame every 10 seconds, in memory only. "Just", "two minutes ago" and "earlier" choose which frames go with your question.
+- **Screen:** the last 5 seconds at one frame a second, plus 10 minutes at one frame every 10 seconds, in memory only, and only while a game is in front; a minute away from the game forgets them. "Just", "two minutes ago" and "earlier" choose which frames go with your question.
 - **Icons:** in games whose things show only as icons (Dead by Daylight perks, items, add-ons, status effects, and buffs from teammates' perks), Lorekeeper matches them against the game wiki's icons on your PC and names them exactly; AI models can't tell them apart from the art. Each game's **cartridge** says which wiki, which icon sets, and where on the HUD each one sits, so they read right over any background. Cartridges are kept in [`cartridges.json`](docs/cartridges.json), fetched at startup, so more games arrive without an update.
 - **Saved screens:** *"Remember this as the vault code"* keeps it on disk for that game; *"what was the vault code?"* brings it back.
 - **Notes:** *"I just beat Margit"*, *"I'm in Act 2"* or *"note: I sided with the Emperor"* are saved at once, with no AI. Lasting facts your questions reveal are noted too.
@@ -207,7 +207,7 @@ python lorekeeper.py --voices                         # sample wavs of every voi
 
 ## Privacy & usage counts
 
-Your voice and its transcription stay on your PC. Your question (and a screenshot, when it asks about the screen) goes to the AI you picked: Claude through your own Claude Code login, or your Ollama / LM Studio (which stay on your PC) or API provider. Wiki searches go to the game's wiki. Nothing else about what you play or say leaves your PC.
+Your voice and its transcription stay on your PC. Your question (and a screenshot, when it asks about the screen) goes to the AI you picked: Claude through your own Claude Code login, or your Ollama / LM Studio (which stay on your PC) or API provider. Wiki searches go to the game's wiki. Nothing else about what you play or say leaves your PC. The screen is only remembered, and in listen mode the mic only open, while a game is in front.
 
 To know how many people use it, Lorekeeper sends an **anonymous count** to [PostHog](https://posthog.com): an `installed` event once, and an `active` event at most once a day. Each carries only:
 

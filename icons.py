@@ -99,11 +99,17 @@ def _read(path):
 _carts, _lock = None, threading.Lock()
 
 
+def _merge(site):
+    """The carts shipped with the app, with the site's on top: the site fixes a cart without a release, but a site that
+    lags the app (it once did, by four releases) must not hide a game the app already knows."""
+    return {**_read(BUNDLED), **site}
+
+
 def carts(folder):
-    """The cached cartridges from the site, else the ones shipped with the app."""
+    """The cached cartridges from the site merged over the ones shipped with the app."""
     global _carts
     if _carts is None:
-        _carts = _read(os.path.join(folder, 'cartridges.json')) or _read(BUNDLED)
+        _carts = _merge(_read(os.path.join(folder, 'cartridges.json')))
     return _carts
 
 
@@ -116,7 +122,7 @@ def refresh(folder):
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, 'cartridges.json'), 'w', encoding='utf-8') as f:
             json.dump(doc, f, indent=1)
-        _carts = got
+        _carts = got = _merge(got)
     return got
 
 

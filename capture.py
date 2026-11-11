@@ -2,6 +2,8 @@
   recent: a frame a second for the last 5 s ("what synergy did I just get": the banner faded before the key went down)
   long:   a frame every 10 s for the last 10 min ("what did that sign say a few minutes ago")
   saved:  "remember this [as the vault code]": kept on disk per game until deleted
+Recorded only while a game is in front (active()); once none has been for forget_s, the memory is dropped, so
+"earlier" never reaches back across a stretch spent in a browser or on the desktop.
 DXGI duplication (dxcam) sees most fullscreen games where GDI gets black. Frames are kept as JPEG bytes (~100 KB),
 in memory; only the ones sent with a question touch disk (temp, deleted after)."""
 import collections, io, os, re, tempfile, threading, time
@@ -31,10 +33,11 @@ def jpeg(img, wide=WIDE):
 
 
 class Screen:
-    def __init__(self, keep=5, long_every=10, long_keep=60, active=lambda: True):
+    def __init__(self, keep=5, long_every=10, long_keep=60, active=lambda: True, forget_s=60):
         self.recent = collections.deque(maxlen=keep)       # (time, jpeg bytes)
         self.long = collections.deque(maxlen=long_keep)
         self.long_every, self.active, self.cam, self.lock = long_every, active, None, threading.Lock()
+        self.forget_s, self.last_long, self.away = forget_s, 0, None   # away: since when no game has been in front
         self.full = None   # the key-down grab at full size: perk icons are too small in the 1280 copies
         threading.Thread(target=self._loop, daemon=True).start()
 
@@ -59,21 +62,31 @@ class Screen:
         return None if img.getbbox() is None else img   # all black: a fullscreen game that hides from both
 
     def _loop(self):
-        last_long = 0
         while True:
             try:
-                if self.active():
-                    img = self._grab()
-                    if img is not None:
-                        now = time.time()
-                        with self.lock:
-                            self.recent.append((now, jpeg(img)))
-                            if now - last_long >= self.long_every:
-                                self.long.append((now, jpeg(img, LONG_WIDE)))
-                                last_long = now
+                self.tick(time.time())
             except Exception as e:
                 print('screen:', e)
             time.sleep(1)
+
+    def tick(self, now):
+        """One second: a frame if a game is in front; if none has been for forget_s, forget them all
+        (a quick alt-tab to read a message keeps them)."""
+        if not self.active():
+            self.away = self.away or now
+            if now - self.away > self.forget_s:
+                with self.lock:
+                    self.recent.clear()
+                    self.long.clear()
+            return
+        self.away = None
+        img = self._grab()
+        if img is not None:
+            with self.lock:
+                self.recent.append((now, jpeg(img)))
+                if now - self.last_long >= self.long_every:
+                    self.long.append((now, jpeg(img, LONG_WIDE)))
+                    self.last_long = now
 
     def now(self):
         """Grab one this instant (at key-down) -> every remembered frame, oldest first, ending with it: [(time, jpeg)]."""

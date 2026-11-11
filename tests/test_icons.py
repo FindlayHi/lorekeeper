@@ -169,3 +169,25 @@ def test_questions_about_the_icons():
     for q in ('what perks do I have', 'is my build good', 'what add-on is this', 'which item am I holding', 'what is my loadout'):
         assert icons.asks(q, dbd, folder), q
     assert not icons.asks('where is the exit gate', dbd, folder) and not icons.asks('what perks', {'name': 'Hades'}, folder)
+
+
+def test_a_lagging_site_cannot_hide_a_bundled_cart_but_fixes_one(tmp_path, monkeypatch):
+    """The site once served carts four releases behind the app: Borderlands 3 vanished. Merge, the site's entry on top."""
+    lore = {'file': 'lore/borderlands-3.zip', 'sha256': 'a' * 64, 'version': 1}
+    bundled = {'version': 1, 'games': {'Dead by Daylight': {'host': 'deadbydaylight.fandom.com', 'lore': lore},
+                                       'Borderlands 3': {'host': 'borderlands.fandom.com', 'lore': lore}}}
+    site = {'version': 1, 'games': {'Dead by Daylight': {'host': 'deadbydaylight.wiki.gg', 'lore': lore},
+                                    'Hades': {'host': 'hades.fandom.com', 'lore': lore}, 'Bad': {'host': 'evil.example.com', 'lore': lore}}}
+    (tmp_path / 'bundled.json').write_text(json.dumps(bundled), encoding='utf-8')
+    monkeypatch.setattr(icons, 'BUNDLED', str(tmp_path / 'bundled.json'))
+    folder = tmp_path / 'data'
+    monkeypatch.setattr(icons, '_carts', None)
+    assert set(icons.carts(str(folder))) == {'dead by daylight', 'borderlands 3'}   # nothing cached yet: the bundled ones
+    monkeypatch.setattr(icons.lookup, 'get', lambda url, timeout=10: json.dumps(site))
+    got = icons.refresh(str(folder))
+    assert set(got) == set(icons.carts(str(folder))) == {'dead by daylight', 'borderlands 3', 'hades'}
+    assert got['dead by daylight']['host'] == 'deadbydaylight.wiki.gg'   # the site's fix wins
+    assert json.loads((folder / 'cartridges.json').read_text(encoding='utf-8')) == site   # the cache is the site's own document
+    monkeypatch.setattr(icons, '_carts', None)   # next start: the cached file, merged the same way
+    again = icons.carts(str(folder))
+    assert set(again) == {'dead by daylight', 'borderlands 3', 'hades'} and again['dead by daylight']['host'] == 'deadbydaylight.wiki.gg'

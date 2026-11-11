@@ -1,5 +1,6 @@
-"""Listen mode: the mic stays open, no key to hold. Start with "Lorekeeper, …"; for a few seconds after an answer,
-follow-ups need no wake word.
+"""Listen mode: no key to hold. Start with "Lorekeeper, …"; for a few seconds after an answer, follow-ups need no
+wake word. The mic is open only while a game is in front (and grace_s after, so an alt-tab doesn't flap it):
+Windows shows it in use only then.
 
 Cheap while you're quiet: a loudness check on 30 ms frames finds speech (the noise floor adapts to fans and game
 audio), and only those clips go to Whisper. Everything is ignored while Lorekeeper itself is talking, or while the
@@ -56,11 +57,13 @@ class Segmenter:
 
 
 class Listener:
-    """on_text(question) for each addressed utterance. muted(): skip audio now (speaking, hotkey held, no game)."""
+    """on_text(question) for each addressed utterance. muted(): skip audio now (speaking, hotkey held, no game).
+    on: listen mode is switched on (the tray follows it). hearing: the mic is open, which tick() keeps to a game in front."""
 
-    def __init__(self, ears, on_text, muted, follow_s=8, on_wake=lambda: None, hint=lambda: ''):
+    def __init__(self, ears, on_text, muted, follow_s=8, on_wake=lambda: None, hint=lambda: '', front=lambda: True, grace_s=10):
         self.ears, self.on_text, self.muted, self.follow_s, self.on_wake, self.hint = ears, on_text, muted, follow_s, on_wake, hint
         self.on, self.open_until, self.stream = False, 0.0, None
+        self.front, self.grace_s, self.away, self.failed, self.lock = front, grace_s, None, False, threading.RLock()
         self.q, self.seg = queue.Queue(), Segmenter()
         threading.Thread(target=self._work, daemon=True).start()
 
@@ -68,23 +71,58 @@ class Listener:
         """Called when an answer finishes speaking: the next few seconds need no wake word."""
         self.open_until = time.time() + self.follow_s
 
+    @property
+    def hearing(self):
+        return self.stream is not None
+
     def start(self):
-        import sounddevice as sd
-        if self.on:
-            return
-        self.seg.reset()
-        from ears import device
-        self.stream = sd.InputStream(samplerate=RATE, channels=1, dtype='float32', blocksize=FRAME, device=device(self.ears.mic),
-                                     callback=lambda d, *_: self.q.put(d[:, 0].copy()))
-        self.stream.start()
-        self.on = True
+        """Listen mode on. Opens the mic now only if a game is in front (a bad mic then fails here, for the tray to say)."""
+        with self.lock:
+            if self.on:
+                return
+            if self.front():
+                self._open()
+            self.on, self.failed = True, False
 
     def stop(self):
-        self.on = False
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-            self.stream = None
+        with self.lock:
+            self.on = False
+            self._close()
+
+    def tick(self, now=None):
+        """Every couple of seconds: open the mic when a game comes to the front, close it once none has been for grace_s.
+        A mic that won't open is logged and tried again on the next game, not every tick."""
+        now = time.time() if now is None else now
+        with self.lock:
+            if self.on and self.front():
+                self.away = None
+                if self.stream is None and not self.failed:
+                    try:
+                        self._open()
+                    except Exception as e:
+                        self.failed = True
+                        print('mic:', e)
+                return
+            self.failed = False
+            if self.stream is not None:
+                self.away = self.away or now
+                if not self.on or now - self.away >= self.grace_s:
+                    self._close()
+
+    def _open(self):
+        import sounddevice as sd
+        from ears import device
+        self.seg.reset()
+        stream = sd.InputStream(samplerate=RATE, channels=1, dtype='float32', blocksize=FRAME, device=device(self.ears.mic),
+                                callback=lambda d, *_: self.q.put(d[:, 0].copy()))
+        stream.start()
+        self.stream, self.away = stream, None
+
+    def _close(self):
+        stream, self.stream, self.away = self.stream, None, None
+        if stream:
+            stream.stop()
+            stream.close()
 
     def _work(self):
         buf = np.zeros(0, dtype='float32')
