@@ -1,6 +1,6 @@
 """Wiki text fetched before the model starts thinking: one DuckDuckGo search, then the top wiki pages' source.
 Most questions are answered from this in one pass, skipping the model's own search-then-fetch round trips (~10 s)."""
-import html, ipaddress, json, os, re, socket, urllib.parse, urllib.request
+import hashlib, html, ipaddress, json, os, re, socket, time, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 import config
 
@@ -35,10 +35,48 @@ class _Redirects(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_Redirects)
 
 
+def agent(url):
+    """MediaWiki's API etiquette asks for a descriptive agent (a spoofed one gets tools blocked); plain pages and DuckDuckGo refuse unknown ones."""
+    if not urllib.parse.urlparse(url).path.endswith('api.php'):
+        return UA
+    import telemetry
+    return f'Lorekeeper/{telemetry.VERSION} (+https://lorekeeper-cgv.pages.dev/)'
+
+
 def get(url, timeout=4):
     check_url(url)
-    req = urllib.request.Request(url, headers={'User-Agent': UA})
+    req = urllib.request.Request(url, headers={'User-Agent': agent(url)})
     return _opener.open(req, timeout=timeout).read().decode('utf-8', 'replace')
+
+
+CACHE_FILES, PAGE_TTL, SEARCH_TTL = 200, 24 * 3600, 3600
+
+
+def cached(url, ttl, timeout=4):
+    """get(), remembered on disk for ttl seconds so the same question twice (or the same page twice) skips the network.
+    Any trouble reading or writing the cache just means a fetch; get() still vets every URL it fetches."""
+    d = os.path.join(config.DIR, 'cache')
+    f = os.path.join(d, hashlib.sha1(url.encode('utf-8')).hexdigest() + '.txt')
+    try:
+        if time.time() - os.path.getmtime(f) < ttl:
+            with open(f, encoding='utf-8') as fh:
+                text = fh.read()
+            if text:
+                return text
+    except (OSError, ValueError):
+        pass
+    text = get(url, timeout)
+    try:
+        if text:
+            os.makedirs(d, exist_ok=True)
+            with open(f, 'w', encoding='utf-8') as fh:
+                fh.write(text)
+            old = sorted((os.path.join(d, n) for n in os.listdir(d)), key=os.path.getmtime)
+            for x in old[:max(0, len(old) - CACHE_FILES)]:
+                os.remove(x)
+    except OSError:
+        pass
+    return text
 
 
 def text_of(h):
@@ -115,12 +153,12 @@ def page(url, question='', most=5000):
         if m:
             api_path = next(p for h, p in APIS.items() if re.fullmatch(h, m[1]))
             api = f'https://{m[1]}{api_path}?action=parse&format=json&prop=wikitext&redirects=1&page=' + urllib.parse.quote(m[2], safe="%:/()_,.-~'")
-            j = json.loads(get(api))
+            j = json.loads(cached(api, PAGE_TTL))
             wt = j.get('parse', {}).get('wikitext', {}).get('*', '')
             wt = re.sub(r'\[\[(?:File|Image|Category):[^\]]*\]\]|<!--.*?-->|<ref[^>]*>.*?</ref>|<gallery>.*?</gallery>', '', wt, flags=re.S)
             if wt.strip():
                 return relevant(wt.strip(), question, most)
-        return relevant(text_of(get(url)), question, most)
+        return relevant(text_of(cached(url, PAGE_TTL)), question, most)
     except Exception:
         return ''
 
@@ -150,9 +188,16 @@ def _hosts():
         return {}
 
 
+TRIED, RETRY = '~tried:', 7 * 24 * 3600   # a failed guess is remembered as TRIED+game -> when; old apps read the file as game -> host strings and ignore the extra keys
+
+
 def _learn(game, host):
     h = _hosts()
     h[game.lower()] = host
+    if host:
+        h.pop(TRIED + game.lower(), None)
+    else:
+        h[TRIED + game.lower()] = str(int(time.time()))
     os.makedirs(config.DIR, exist_ok=True)
     with open(HOSTS, 'w', encoding='utf-8') as f:
         json.dump(h, f, indent=1)
@@ -171,9 +216,31 @@ def guess_host(game):
     return ''
 
 
-def host_for(game, urls=()):
-    """The game's wiki host: known, learned, seen in search results, or guessed once."""
+def cart_host(game, folder):
+    """The wiki host the game's cartridge names (carts update from the site, no release needed), if we can serve it."""
+    if not folder:
+        return ''
+    try:
+        import icons   # here, not at the top: icons imports lookup
+        host = (icons.cart({'name': game}, folder) or {}).get('host') or ''
+    except Exception:
+        return ''
+    return host if isinstance(host, str) and re.fullmatch(SUB, host) and any(re.fullmatch(p, host) for p in APIS) else ''
+
+
+def _gave_up_recently(h, g):
+    """A wiki search that found nothing is not retried for a week; a bare '' with no date (older app) counts as stale."""
+    try:
+        return time.time() - int(h.get(TRIED + g)) < RETRY
+    except (TypeError, ValueError):
+        return False
+
+
+def host_for(game, urls=(), folder=''):
+    """The game's wiki host: its cartridge's, known, learned, seen in search results, or guessed (again after a week)."""
     g = game.lower()
+    if host := cart_host(game, folder):
+        return host
     if g in KNOWN:
         return KNOWN[g]
     h = _hosts()
@@ -184,7 +251,7 @@ def host_for(game, urls=()):
         if m:
             _learn(game, m[1])
             return m[1]
-    if g not in h:   # guess once per game
+    if g not in h or not h[g] and not _gave_up_recently(h, g):   # guess once per game, again a week after a miss
         found = guess_host(game)
         _learn(game, found)
         return found
@@ -218,7 +285,7 @@ def site_search(host, question, n=2, game=''):
         cands = [f'{t} ({game})' for t in cands[:3]] + cands
         cands = cands[:10]
     if cands:
-        j = json.loads(get(api + '&redirects=1&titles=' + urllib.parse.quote('|'.join(cands)), timeout=4)).get('query', {})
+        j = json.loads(cached(api + '&redirects=1&titles=' + urllib.parse.quote('|'.join(cands)), SEARCH_TTL)).get('query', {})
         real = {p['title'] for p in j.get('pages', {}).values() if 'missing' not in p and 'invalid' not in p}
         moved = {r['from']: r['to'] for r in j.get('redirects', [])} | {nm['from']: nm['to'] for nm in j.get('normalized', [])}
         for c in cands:
@@ -227,7 +294,7 @@ def site_search(host, question, n=2, game=''):
                 out.append(url(t))
     terms = ' '.join(re.sub(STOP, ' ', re.sub(r"[^\w' ]", ' ', question), flags=re.I).split())
     if len(out) < n and terms:
-        j = json.loads(get(api + f'&list=search&srlimit={n}&srsearch=' + urllib.parse.quote(terms), timeout=4))
+        j = json.loads(cached(api + f'&list=search&srlimit={n}&srsearch=' + urllib.parse.quote(terms), SEARCH_TTL))
         out += [url(r['title']) for r in j.get('query', {}).get('search', []) if url(r['title']) not in out]
     return out[:n]
 
@@ -294,12 +361,12 @@ def own_guides(question, game, folder, most=4000):
 
 
 def wiki(question, game, pages=2, folder='', progress=''):
-    """progress: the player's latest notes. "Where do I go next?" names nothing, so their last place or item is what to look up."""
+    """'Source: <url>\n<text>' blocks for the prompt, or '' when the search finds nothing (the model searches itself).
+    progress: the player's latest notes. "Where do I go next?" names nothing, so their last place or item is what to look up."""
     if progress and not words(question) - VERBS - {'where', 'what', 'next'}:
         question = question + ' ' + ' '.join(progress.strip().splitlines()[-2:])
-    """'Source: <url>\n<text>' blocks for the prompt, or '' when the search finds nothing (the model searches itself)."""
     urls = []
-    host = host_for(game) if game else ''
+    host = host_for(game, folder=folder) if game else ''
     if host:
         try:
             urls = site_search(host, question, pages, game)
