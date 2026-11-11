@@ -1,8 +1,9 @@
 """First run of an installed Lorekeeper: what setup.ps1 does for a source checkout, done from the app.
   - the Kokoro voice model (~120 MB) downloads in the background, progress in the box; answers use Windows' voice until then
-  - no Claude Code, and it's the AI picked? offer to install it (Anthropic's official installer, in a terminal window) and open
-    it to sign in, or point at tray → AI for Ollama / LM Studio / OpenAI"""
-import hashlib, os, shutil, subprocess, threading, urllib.request
+  - no Claude Code, and it's the AI picked? offer to install it (Anthropic's official installer, in a terminal window) and
+    sign in, or point at tray → AI for Ollama / LM Studio / OpenAI
+  - Claude Code there but signed out, or billing an API key instead of the plan? say so, with a click to sign in"""
+import hashlib, os, shutil, subprocess, threading, time, urllib.request
 import config
 
 MODEL_URL = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'
@@ -11,6 +12,7 @@ MODEL_SHA256 = {   # of the model-files-v1.0 release's files; a download that di
     'kokoro-v1.0.int8.onnx': '6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb',
     'voices-v1.0.bin': 'bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d'}
 CLAUDE_INSTALL = 'irm https://claude.ai/install.ps1 | iex'
+CLAUDE_SIGN_IN = 'claude auth login --claudeai'   # the Pro / Max plan, not Console API billing
 
 
 def missing_models():
@@ -58,9 +60,56 @@ def install_claude():
     """Anthropic's official Windows installer in a visible PowerShell window, then Claude Code itself to sign in."""
     cmd = (f"Write-Host 'Installing Claude Code (Anthropic''s official installer)...'; {CLAUDE_INSTALL}; "
            "$env:Path = \"$env:USERPROFILE\\.local\\bin;$env:Path\"; "
-           "Write-Host ''; Write-Host 'Now sign in with your Claude Pro or Max account. When you are signed in, close this window.'; claude")
-    subprocess.Popen(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-Command', cmd],
+           "Write-Host ''; Write-Host 'Now sign in with your Claude Pro or Max account in the browser that opens.'; "
+           f"{CLAUDE_SIGN_IN}; Write-Host ''; Write-Host 'Done. You can close this window.'")
+    _console(cmd, stay=True)
+
+
+def sign_in_claude():
+    """Claude Code's own sign-in (it opens claude.ai in the browser) in a visible window that closes itself once signed in,
+    and stays open with the reason if it didn't work."""
+    import brain   # its PATH includes where Claude Code's own installer puts it
+    exe = (shutil.which('claude') or 'claude').replace("'", "''")
+    _console("Write-Host 'Sign in with your Claude Pro or Max account in the browser that opens.'; "
+             f"& '{exe}' {CLAUDE_SIGN_IN.split(' ', 1)[1]}; "
+             "if ($LASTEXITCODE) { Read-Host 'Sign-in did not finish. Press Enter to close' }")
+
+
+def _console(cmd, stay=False):
+    subprocess.Popen(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass'] + (['-NoExit'] if stay else []) + ['-Command', cmd],
                      creationflags=0x00000010)   # CREATE_NEW_CONSOLE: the person needs to see and type in it
+
+
+_watching = threading.Event()
+
+
+def wait_for_sign_in(box, then=lambda: None, every=3, give_up=600):
+    """After opening an install or sign-in window (which can't tell us when it's done): watch Claude Code until it's
+    signed in, say so once, then call `then`. One watcher at a time."""
+    import brain
+    if _watching.is_set():
+        return
+    _watching.set()
+
+    def run():
+        try:
+            end = time.time() + give_up
+            while time.time() < end:
+                time.sleep(every)
+                state, note = brain.claude_state()
+                if state == 'plan':
+                    return box.show('Claude Code', f"Signed in{f' ({note.title()})' if note else ''}. Hold the hotkey in a game and ask.", title=True)
+                if state == 'api-key':
+                    return box.show('Claude Code', api_key_warning(note), title=True)
+        finally:
+            _watching.clear()
+            then()
+    threading.Thread(target=run, daemon=True).start()
+
+
+def api_key_warning(source):
+    return (f'Claude Code is using {source}, so asks are billed to that key, not your Claude plan. '
+            'Remove it from your environment variables to use the plan.')
 
 
 def run(app, box):
@@ -89,7 +138,17 @@ def run(app, box):
             box.show('Voice download failed', 'Answers use the Windows voice for now. Lorekeeper tries again next time it starts.', title=True)
 
     def claude():
-        if app.cfg.get('ai', 'claude') != 'claude' or claude_installed():
+        if app.cfg.get('ai', 'claude') != 'claude':
+            return
+        if claude_installed():
+            import brain
+            state, note = brain.claude_state()
+            if state == 'signed-out':
+                box.show('Claude Code is signed out', 'Click here to sign in with your Claude Pro or Max plan, '
+                         'or pick another AI in the tray: AI.', stay=True, title=True, hint='CLICK TO SIGN IN',
+                         on_click=lambda: (sign_in_claude(), wait_for_sign_in(box)))
+            elif state == 'api-key':
+                box.show('Claude Code', api_key_warning(note), title=True)
             return
 
         def ask():
@@ -100,8 +159,9 @@ def run(app, box):
                                    'official installer, then asks you to sign in.\n\nNo Claude plan? Say no, then pick Ollama, '
                                    'LM Studio or an OpenAI key in the tray under AI.', parent=box.root):
                 install_claude()
-                box.show('Claude Code', 'Finish the install and sign in in the window that opened. Then hold the hotkey in a game and ask.',
+                box.show('Claude Code', 'Finish the install and sign in in the window that opened. Lorekeeper notices when you are signed in.',
                          stay=True, title=True)
+                wait_for_sign_in(box)
             else:
                 box.show('Claude Code', 'Install it any time (claude.com/claude-code), or pick another AI in the tray: AI.', stay=True, title=True)
         box.root.after(2500, ask)
