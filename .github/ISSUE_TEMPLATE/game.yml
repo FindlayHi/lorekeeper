@@ -1,0 +1,25 @@
+name: Add a game
+description: Ask for a game to be supported
+labels: [game]
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Game
+    validations: { required: true }
+  - type: input
+    id: wiki
+    attributes:
+      label: Wiki address
+      description: The wiki Lorekeeper should search, for example `example.fandom.com`.
+    validations: { required: true }
+  - type: textarea
+    id: icons
+    attributes:
+      label: Where the icons sit on screen
+      description: For example "perks along the bottom right", "buffs under the minimap".
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag in a few screenshots of the game with the icons showing.
