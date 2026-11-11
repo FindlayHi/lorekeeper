@@ -843,13 +843,12 @@ def main():
     except ValueError:
         hk = hotkey.Hotkey(config.DEFAULTS['hotkey'], app.down, app.up, app.cancel, app.in_game)
     app.hk = hk
-    threading.Thread(target=hk.run, daemon=True).start()
     try:
         lk = hotkey.Hotkey(cfg['listenKey'], app.toggle_listen, lambda: None)
     except ValueError:
         lk = hotkey.Hotkey(config.DEFAULTS['listenKey'], app.toggle_listen, lambda: None)
     app.lk = lk
-    threading.Thread(target=lk.run, daemon=True).start()
+    threading.Thread(target=hotkey.Hooks(hk, lk).run, daemon=True).start()   # one hook thread serves both keys
     tray(app, b)
     app.updater = updater.Updater(telemetry.VERSION, app.cfg, lambda v: b.show(
         'Update available', f'Lorekeeper {v} is out. Click here to update, or later from the tray (your notes and settings stay).',
