@@ -1,0 +1,38 @@
+name: Bug report
+description: Something did not work as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Lorekeeper version
+      description: Shown in the tray menu.
+    validations: { required: true }
+  - type: input
+    id: ai
+    attributes:
+      label: Which AI answers
+      description: Claude, Ollama, LM Studio, an API provider, or something else.
+    validations: { required: true }
+  - type: input
+    id: game
+    attributes:
+      label: Game
+    validations: { required: true }
+  - type: textarea
+    id: asked
+    attributes:
+      label: What you asked
+    validations: { required: true }
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations: { required: true }
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines (optional)
+      description: The last few lines of `%APPDATA%\Lorekeeper\app.log`. Check them for anything private first.
+      render: text

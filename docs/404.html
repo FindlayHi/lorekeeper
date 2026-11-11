@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Page not found | Lorekeeper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<style>
+:root {
+  --night: #0b0b2b; --night-2: #12123d; --purple: #7a3cff; --sky: #49c6ff;
+  --crimson: #e0284f; --crimson-dark: #8a1636; --ink: #f2efe6; --ink-dim: #c8c4d8; --shadow: #05051a;
+  --heading: "Press Start 2P", "Courier New", monospace;
+  --pixel: "VT323", "Consolas", "Courier New", monospace;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px; text-align: center;
+  background-color: var(--night);
+  background-image:
+    radial-gradient(ellipse at 50% -10%, rgba(122,60,255,.35), transparent 60%),
+    linear-gradient(180deg, var(--night) 0%, #10103a 55%, #1a1050 100%);
+  color: var(--ink); font-family: var(--body); font-size: 1.125rem; line-height: 1.65;
+}
+.card { max-width: 30em; padding: 32px 28px; background: var(--night-2); box-shadow: 0 0 0 4px var(--ink), 8px 12px 0 0 var(--shadow); }
+.code { font-family: var(--pixel); font-size: 1.5rem; color: var(--sky); margin: 0 0 8px; }
+h1 { font-family: var(--heading); font-weight: 400; font-size: clamp(1.1rem, 3.6vw, 1.7rem); line-height: 1.45; margin: 0 0 16px; text-shadow: 4px 4px 0 var(--crimson-dark); }
+p { color: var(--ink-dim); margin: 0 0 24px; }
+.btn { display: inline-block; font-family: var(--heading); font-size: 12px; padding: 14px 18px; color: #fff; background: var(--crimson); text-decoration: none; box-shadow: 0 0 0 3px var(--ink); }
+.btn:hover, .btn:focus-visible { background: var(--purple); }
+</style>
+</head>
+<body>
+<main class="card">
+  <p class="code">404</p>
+  <h1>This page is not in the book</h1>
+  <p>The page you wanted is not here. It may have moved, or the address may have a typo.</p>
+  <a class="btn" href="/">Back to Lorekeeper</a>
+</main>
+</body>
+</html>

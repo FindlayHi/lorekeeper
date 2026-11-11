@@ -56,6 +56,7 @@ jobs:
             dist/Lorekeeper-Setup-*.exe
             dist/Lorekeeper-Setup.exe
             dist/Lorekeeper-Setup.exe.sha256
+          generate_release_notes: true
       - name: Keep the build (manual runs)
         if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
