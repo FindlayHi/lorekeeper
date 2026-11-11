@@ -1,7 +1,7 @@
 """The answer: `claude -p` on the user's Claude plan, with web search and nothing else; or any OpenAI-compatible server
 (Ollama, LM Studio, the OpenAI API, OpenRouter…) with the wiki pages fetched beforehand and no tools.
 Started at key-down with the game already known, so its ~1 s startup overlaps the talking."""
-import atexit, base64, json, os, re, shutil, socket, subprocess, sys, tempfile, threading, urllib.error, urllib.request
+import atexit, base64, json, os, re, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
 
 if sys.platform == 'win32':
     class _Quiet(subprocess.Popen):   # claude.cmd never flashes a console
@@ -224,6 +224,23 @@ def stop(p):
             p.kill()
 
 
+IDLE_SECS = 60   # `claude -p` silent this long is hung: even a web search answers in seconds, not a minute
+ASK_SECS = 150   # one answer never takes longer than this, however busy
+SLOW = 'Claude Code took too long to answer.'
+
+
+def watch(p, last, done, why):
+    """Kills a `claude -p` that hangs: no line for IDLE_SECS, or ASK_SECS in all. A read from a pipe can't time out on
+    Windows, but killing the process ends it. last[0]: when ask() last read a line; why gets the reason once it fires."""
+    start = time.time()
+    while not done.wait(min(1, IDLE_SECS / 4, ASK_SECS / 4)):
+        now = time.time()
+        if now - last[0] > IDLE_SECS or now - start > ASK_SECS:
+            why.append(f'no output for {now - last[0]:.0f}s' if now - last[0] > IDLE_SECS else f'{now - start:.0f}s in all')
+            stop(p)
+            return
+
+
 UNFENCE = re.compile(r'<(\s*/?\s*untrusted)', re.I)
 
 
@@ -346,20 +363,29 @@ def ask(p, text, shots=(), on_text=lambda s: None, keep=None):
     p.stdin.write(json.dumps({'type': 'user', 'message': {'role': 'user', 'content': content}}) + '\n')
     p.stdin.close()
     answer, usd, streamed = '', 0, ''
-    for line in p.stdout:
-        try:
-            j = json.loads(line)
-        except ValueError:
-            continue
-        if j.get('type') == 'stream_event':
-            e = j.get('event', {})
-            if e.get('type') == 'message_start':
-                streamed = ''
-            elif e.get('type') == 'content_block_delta' and e.get('delta', {}).get('type') == 'text_delta':
-                streamed += e['delta']['text']
-                on_text(streamed)
-        elif j.get('type') == 'result':
-            answer, usd = (j.get('result') or '').strip(), j.get('total_cost_usd', 0)
+    last, done, why = [time.time()], threading.Event(), []
+    threading.Thread(target=watch, args=(p, last, done, why), daemon=True).start()
+    try:
+        for line in p.stdout:
+            last[0] = time.time()
+            try:
+                j = json.loads(line)
+            except ValueError:
+                continue
+            if j.get('type') == 'stream_event':
+                e = j.get('event', {})
+                if e.get('type') == 'message_start':
+                    streamed = ''
+                elif e.get('type') == 'content_block_delta' and e.get('delta', {}).get('type') == 'text_delta':
+                    streamed += e['delta']['text']
+                    on_text(streamed)
+            elif j.get('type') == 'result':
+                answer, usd = (j.get('result') or '').strip(), j.get('total_cost_usd', 0)
+    finally:
+        done.set()
+    if why:
+        print('claude -p killed:', why[0], flush=True)
+        return SLOW, 0
     p.wait()
     if not answer and p.returncode:
         p.errors.seek(0)
