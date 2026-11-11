@@ -12,7 +12,7 @@ answers spoiler-safe ("I just beat Margit"); "spoil it" re-asks without the guar
   lorekeeper.py --voices        sample wavs of the voices, to choose kokoroVoice
 Settings: %APPDATA%/Lorekeeper/config.json. Log: log.jsonl beside it.
 """
-import json, os, re, sys, threading, time
+import json, os, re, sys, threading, time, traceback
 
 if sys.argv[1:2] == ['--search-guard']:   # Claude Code's check on each web search (brain.guard_settings): nothing else loads
     import searchguard
@@ -25,11 +25,68 @@ if sys.platform == 'win32':
             pass
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 FROZEN = getattr(sys, 'frozen', False)   # the installed app (PyInstaller): no console, so output goes to a log file
+LOG_MOST = 2_000_000   # bytes: past this, app.log and log.jsonl keep their newest half (at startup)
+
+
+def trim(path, most=LOG_MOST):
+    """A log that has grown past `most` keeps only its newest half, cut at a line, so it never fills the disk."""
+    try:
+        if os.path.getsize(path) <= most:
+            return
+        with open(path, 'rb') as f:
+            f.seek(-(most // 2), 2)
+            tail = f.read()
+        with open(path, 'wb') as f:
+            f.write(tail[tail.find(b'\n') + 1:])
+    except OSError as e:
+        print('trim:', e)
+
+
+class Stamped:
+    """app.log as stdout and stderr: every line starts with the time, so a crash can be placed after the fact.
+    print from any module and tracebacks alike; lines from two threads never share a stamp."""
+
+    def __init__(self, f):
+        self.f, self.fresh, self.lock = f, True, threading.Lock()
+
+    def write(self, s):
+        with self.lock:
+            for piece in s.splitlines(True):
+                if self.fresh:
+                    self.f.write(time.strftime('%Y-%m-%d %H:%M:%S '))
+                self.f.write(piece)
+                self.fresh = piece.endswith(('\n', '\r'))
+        return len(s)
+
+    def flush(self):
+        self.f.flush()
+
+    def __getattr__(self, k):   # encoding, fileno, isatty…: the file's own
+        return getattr(self.f, k)
+
+
+def uncaught():
+    """Errors nothing caught, on any thread, go to stderr (app.log when installed) with their traceback."""
+    def on_thread(a):
+        if a.exc_type is not SystemExit:
+            print(f'uncaught in thread {a.thread.name if a.thread else "?"}:', file=sys.stderr)
+            traceback.print_exception(a.exc_type, a.exc_value, a.exc_traceback, file=sys.stderr)
+            sys.stderr.flush()
+
+    def on_main(t, e, tb):
+        print('uncaught:', file=sys.stderr)
+        traceback.print_exception(t, e, tb, file=sys.stderr)
+        sys.stderr.flush()
+    threading.excepthook, sys.excepthook = on_thread, on_main
+
+
 if FROZEN:
     _logdir = os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~'), 'Lorekeeper')
     os.makedirs(_logdir, exist_ok=True)
-    sys.stdout = sys.stderr = open(os.path.join(_logdir, 'app.log'), 'a', encoding='utf-8', buffering=1)
-    print(f"--- {__import__('time').strftime('%Y-%m-%d %H:%M:%S')} Lorekeeper starting", flush=True)
+    trim(os.path.join(_logdir, 'app.log'))
+    sys.stdout = sys.stderr = Stamped(open(os.path.join(_logdir, 'app.log'), 'a', encoding='utf-8', buffering=1))
+    print('--- Lorekeeper starting', flush=True)
+uncaught()
 import brain, capture, commands, config, games, gear, listen, lookup, notes, icons, rag, romm, telemetry, updater, voice  # noqa: E402
 
 LOG = os.path.join(config.DIR, 'log.jsonl')
@@ -47,6 +104,34 @@ def log(row):
     os.makedirs(config.DIR, exist_ok=True)
     with open(LOG, 'a', encoding='utf-8') as f:
         f.write(json.dumps({'at': time.strftime('%Y-%m-%d %H:%M:%S'), **row}) + '\n')
+
+
+FAILED = 'Something went wrong answering that. Try again.'
+PLAIN = re.compile(r'[\\/<>{}\[\]`]|https?:|Errno|object|attribute|NoneType', re.I)   # paths, links, Python's own wording
+
+
+def reason(e):
+    """The error as a short plain sentence worth saying aloud ("The speech model isn't ready…"), or ''. Only the kinds
+    that describe the world (a pipe, the network, a model that didn't load): a bug's message means nothing to the player."""
+    if not isinstance(e, (OSError, RuntimeError)):
+        return ''
+    s = (e.strerror if isinstance(e, OSError) and e.strerror else str(e)).strip()
+    return s if 0 < len(s) <= 120 and '\n' not in s and not PLAIN.search(s) else ''
+
+
+def guarded(fresh=False):
+    """For the hotkey's and listen mode's threads: whatever fails on the way to an answer is logged, said and shown,
+    instead of the thread dying with the box stuck on "…". Silent if the player has already asked something else.
+    fresh: the call starts a new question itself (gen + 1)."""
+    def wrap(fn):
+        def run(self, *a):
+            gen = self.gen + fresh
+            try:
+                return fn(self, *a)
+            except Exception as e:
+                self.failed(e, gen)
+        return run
+    return wrap
 
 
 class App:
@@ -167,6 +252,7 @@ class App:
         if self.box:
             self.box.show('👂 Listening…', '', stay=True)
 
+    @guarded(fresh=True)
     def heard(self, q):
         self.gen += 1
         g, _ = games.current()
@@ -207,6 +293,7 @@ class App:
         if self.box:
             self.box.hide()
 
+    @guarded()
     def up(self):
         gen = self.gen
         audio = self.ears.stop()
@@ -229,6 +316,26 @@ class App:
             self.warm.drop()
             return self.command(q, *c)
         self.answer(q, gen)
+
+    def failed(self, e, gen):
+        """An answer that broke: the traceback to the log; the player hears a short sentence and can press again."""
+        traceback.print_exception(type(e), e, e.__traceback__)
+        sys.stderr.flush()
+        try:
+            self.warm.drop()   # its pipe may be what broke
+        except Exception:
+            pass
+        if gen != self.gen:
+            return   # they've asked something else: that answer has the box and the voice
+        why = reason(e)
+        said = FAILED + (f" {why.rstrip('.')}." if why else '')
+        try:
+            self.voice.stop()
+            self.say('', said)
+        except Exception:
+            traceback.print_exc()
+            if self.box:   # no voice: the box still says it
+                self.box.show('', said)
 
     def command(self, q, action, arg):
         g = self.game
@@ -482,8 +589,7 @@ def tray(app, box):
         pystray.MenuItem('Keep it up while talking', flip('boxWhileSpeaking'), checked=lambda _: app.cfg['boxWhileSpeaking'],
                          enabled=lambda _: app.cfg['box']),
         pystray.MenuItem('Use the screen', flip('screen'), checked=lambda _: app.cfg['screen']),
-        pystray.MenuItem("This game's notes", lambda *_: app.game and (notes.add(app.game, 'notes opened') if not os.path.exists(notes.path(app.game)) else None,
-                                                                     os.startfile(notes.path(app.game))), enabled=lambda _: bool(app.game)),
+        pystray.MenuItem("This game's notes", lambda *_: app.game and os.startfile(notes.touch(app.game)), enabled=lambda _: bool(app.game)),
         pystray.MenuItem('Share anonymous usage counts', flip('telemetry'), checked=lambda _: app.cfg['telemetry'] is True),
         pystray.MenuItem('Reset font', lambda *_: reset_font(), enabled=lambda _: any(app.cfg[k] for k in FONT_KEYS)),
         pystray.MenuItem('Settings file', lambda *_: (config.save(app.cfg), os.startfile(config.FILE))),
@@ -673,9 +779,7 @@ def tray(app, box):
         config.save(app.cfg)
 
     def notes_open():
-        if not os.path.exists(notes.path(app.game)):
-            notes.add(app.game, 'notes opened')
-        os.startfile(notes.path(app.game))
+        os.startfile(notes.touch(app.game))
 
     def items():
         up = getattr(app, 'updater', None) and app.updater.available
@@ -832,6 +936,7 @@ def main():
         ctypes.windll.user32.MessageBoxW(None, 'Lorekeeper is already running: look for the pixel book in your tray '
                                                '(click the ^ arrow by the clock if it is hidden).', 'Lorekeeper', 0x40)
         return
+    trim(LOG)
     import box as boxmod, hotkey
     ok, msg = brain.ready(cfg)
     if not ok:
@@ -855,7 +960,12 @@ def main():
         title=True, on_click=lambda: app.updater.update(b), hint='CLICK TO UPDATE'))
     app.updater.start()
     b.show('Lorekeeper is ready', f"Hold {hotkey.pretty(hk.combo)} in a game and ask." + (f" Playing {app.game['name']}." if app.game else ''), title=True)
-    if telemetry.should_ask(app.cfg):   # first run: ask once; nothing is sent before a yes
+    if config.broken:   # the old settings are in config.bad.json: say so, and don't ask the usage-counts question again over it
+        def warn():
+            from tkinter import messagebox
+            messagebox.showwarning('Lorekeeper', config.BROKEN, parent=b.root)
+        b.root.after(1500, warn)
+    elif telemetry.should_ask(app.cfg):   # first run: ask once; nothing is sent before a yes
         def ask():
             from tkinter import messagebox
             app.cfg['telemetry'] = bool(messagebox.askyesno('Lorekeeper', telemetry.QUESTION, parent=b.root))

@@ -32,18 +32,24 @@ def device(name):
 
 class Ears:
     def __init__(self, size='base.en', device='cpu'):
-        self.model, self.chunks, self.stream = None, [], None
+        self.model, self.chunks, self.stream, self.why = None, [], None, ''   # why: the model failed to load, and how
         self.mic = ''   # a mic's name from inputs(); '' = Windows' default (unplugged: falls back to the default too)
         self.ready = threading.Event()
         threading.Thread(target=self._load, args=(size, device), daemon=True).start()   # a few seconds; the first ask waits for it
 
     def _load(self, size, device):
-        from faster_whisper import WhisperModel
+        """Ready is set however it ends, so a question never waits on a model that will never come; why says what broke."""
         try:
-            self.model = WhisperModel(size, device=device, compute_type='int8' if device == 'cpu' else 'float16')
-        except Exception:
-            self.model = WhisperModel(size, device='cpu', compute_type='int8')   # no CUDA after all
-        self.ready.set()
+            from faster_whisper import WhisperModel
+            try:
+                self.model = WhisperModel(size, device=device, compute_type='int8' if device == 'cpu' else 'float16')
+            except Exception:
+                self.model = WhisperModel(size, device='cpu', compute_type='int8')   # no CUDA after all
+        except Exception as e:
+            self.why = f'{type(e).__name__}: {e}'
+            print('speech model:', self.why, flush=True)
+        finally:
+            self.ready.set()
 
     def start(self):
         import sounddevice as sd
@@ -64,7 +70,10 @@ class Ears:
         """hint: the game's name and names from its notes, so Whisper spells "Malenia" right."""
         if len(audio) < RATE * 0.4:
             return ''
-        self.ready.wait(60)
+        if not self.ready.wait(60):
+            raise RuntimeError("The speech model is still loading. Try again in a moment.")
+        if not self.model:
+            raise RuntimeError("The speech model isn't ready: it downloads the first time, check your connection")
         segs, _ = self.model.transcribe(audio, language='en', beam_size=1, vad_filter=True, initial_prompt=hint or None,
                                         condition_on_previous_text=False)
         return ' '.join(s.text.strip() for s in segs).strip()
