@@ -12,7 +12,7 @@ answers spoiler-safe ("I just beat Margit"); "spoil it" re-asks without the guar
   lorekeeper.py --voices        sample wavs of the voices, to choose kokoroVoice
 Settings: %APPDATA%/Lorekeeper/config.json. Log: log.jsonl beside it.
 """
-import json, os, re, sys, threading, time
+import json, os, re, sys, threading, time, traceback
 
 if sys.argv[1:2] == ['--search-guard']:   # Claude Code's check on each web search (brain.guard_settings): nothing else loads
     import searchguard
@@ -47,6 +47,34 @@ def log(row):
     os.makedirs(config.DIR, exist_ok=True)
     with open(LOG, 'a', encoding='utf-8') as f:
         f.write(json.dumps({'at': time.strftime('%Y-%m-%d %H:%M:%S'), **row}) + '\n')
+
+
+FAILED = 'Something went wrong answering that. Try again.'
+PLAIN = re.compile(r'[\\/<>{}\[\]`]|https?:|Errno|object|attribute|NoneType', re.I)   # paths, links, Python's own wording
+
+
+def reason(e):
+    """The error as a short plain sentence worth saying aloud ("The speech model isn't ready…"), or ''. Only the kinds
+    that describe the world (a pipe, the network, a model that didn't load): a bug's message means nothing to the player."""
+    if not isinstance(e, (OSError, RuntimeError)):
+        return ''
+    s = (e.strerror if isinstance(e, OSError) and e.strerror else str(e)).strip()
+    return s if 0 < len(s) <= 120 and '\n' not in s and not PLAIN.search(s) else ''
+
+
+def guarded(fresh=False):
+    """For the hotkey's and listen mode's threads: whatever fails on the way to an answer is logged, said and shown,
+    instead of the thread dying with the box stuck on "…". Silent if the player has already asked something else.
+    fresh: the call starts a new question itself (gen + 1)."""
+    def wrap(fn):
+        def run(self, *a):
+            gen = self.gen + fresh
+            try:
+                return fn(self, *a)
+            except Exception as e:
+                self.failed(e, gen)
+        return run
+    return wrap
 
 
 class App:
@@ -160,6 +188,7 @@ class App:
         if self.box:
             self.box.show('👂 Listening…', '', stay=True)
 
+    @guarded(fresh=True)
     def heard(self, q):
         self.gen += 1
         g, _ = games.current()
@@ -200,6 +229,7 @@ class App:
         if self.box:
             self.box.hide()
 
+    @guarded()
     def up(self):
         gen = self.gen
         audio = self.ears.stop()
@@ -222,6 +252,26 @@ class App:
             self.warm.drop()
             return self.command(q, *c)
         self.answer(q, gen)
+
+    def failed(self, e, gen):
+        """An answer that broke: the traceback to the log; the player hears a short sentence and can press again."""
+        traceback.print_exception(type(e), e, e.__traceback__)
+        sys.stderr.flush()
+        try:
+            self.warm.drop()   # its pipe may be what broke
+        except Exception:
+            pass
+        if gen != self.gen:
+            return   # they've asked something else: that answer has the box and the voice
+        why = reason(e)
+        said = FAILED + (f" {why.rstrip('.')}." if why else '')
+        try:
+            self.voice.stop()
+            self.say('', said)
+        except Exception:
+            traceback.print_exc()
+            if self.box:   # no voice: the box still says it
+                self.box.show('', said)
 
     def command(self, q, action, arg):
         g = self.game
