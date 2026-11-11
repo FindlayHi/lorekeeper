@@ -920,7 +920,12 @@ def main():
         title=True, on_click=lambda: app.updater.update(b), hint='CLICK TO UPDATE'))
     app.updater.start()
     b.show('Lorekeeper is ready', f"Hold {hotkey.pretty(hk.combo)} in a game and ask." + (f" Playing {app.game['name']}." if app.game else ''), title=True)
-    if telemetry.should_ask(app.cfg):   # first run: ask once; nothing is sent before a yes
+    if config.broken:   # the old settings are in config.bad.json: say so, and don't ask the usage-counts question again over it
+        def warn():
+            from tkinter import messagebox
+            messagebox.showwarning('Lorekeeper', config.BROKEN, parent=b.root)
+        b.root.after(1500, warn)
+    elif telemetry.should_ask(app.cfg):   # first run: ask once; nothing is sent before a yes
         def ask():
             from tkinter import messagebox
             app.cfg['telemetry'] = bool(messagebox.askyesno('Lorekeeper', telemetry.QUESTION, parent=b.root))

@@ -1,9 +1,10 @@
 """Where Lorekeeper keeps its files, and its settings (config.json, edited by hand or from the tray)."""
-import json, os
+import json, os, shutil, tempfile, time
 
 HOME = os.path.expanduser('~')
 DIR = os.environ.get('LOREKEEPER_DIR') or os.path.join(os.environ.get('APPDATA') or os.path.join(HOME, '.config'), 'Lorekeeper')   # tests point it elsewhere
 FILE = os.path.join(DIR, 'config.json')
+BAD = os.path.join(DIR, 'config.bad.json')   # a config.json that couldn't be read, kept for the player to fix or copy from
 MODELS = os.path.join(os.environ.get('LOCALAPPDATA') or DIR, 'Lorekeeper', 'models')   # big files: not roamed
 
 DEFAULTS = {
@@ -47,15 +48,52 @@ DEFAULTS = {
 }
 
 
+broken = ''   # why config.json couldn't be read this run, if it couldn't: main() tells the player once
+BROKEN = "Your settings file couldn't be read, so defaults are in use. The old one is kept as config.bad.json."
+
+
 def load():
+    """The settings over the defaults. One that won't parse is copied to config.bad.json before anything saves over it."""
+    global broken
     try:
-        with open(FILE, encoding='utf-8') as f:
-            return {**DEFAULTS, **json.load(f)}
-    except (OSError, ValueError):
+        with open(FILE, encoding='utf-8-sig') as f:   # -sig: Notepad may have saved it with a BOM
+            cfg = json.load(f)
+        if not isinstance(cfg, dict):
+            raise ValueError('not a JSON object')
+        return {**DEFAULTS, **cfg}
+    except FileNotFoundError:
+        return dict(DEFAULTS)
+    except (OSError, ValueError) as e:
+        broken = f'{type(e).__name__}: {e}'
+        print(f'config.json unreadable, using defaults ({broken}); kept as {BAD}', flush=True)
+        try:
+            shutil.copyfile(FILE, BAD)
+        except OSError as e2:
+            print('config.bad.json:', e2, flush=True)
         return dict(DEFAULTS)
 
 
+def write(path, text):
+    """The whole file or none of it: written beside, then swapped in, so a crash or a full disk mid-write leaves the old one."""
+    folder = os.path.dirname(path) or '.'
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=os.path.basename(path) + '.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        for i in range(5):   # Windows: a virus scanner or an editor can hold the old file for a moment
+            try:
+                return os.replace(tmp, path)
+            except PermissionError:
+                if i == 4:
+                    raise
+                time.sleep(0.1)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 def save(cfg):
-    os.makedirs(DIR, exist_ok=True)
-    with open(FILE, 'w', encoding='utf-8') as f:
-        json.dump({k: v for k, v in cfg.items() if DEFAULTS.get(k) != v}, f, indent=1)
+    write(FILE, json.dumps({k: v for k, v in cfg.items() if DEFAULTS.get(k) != v}, indent=1))
