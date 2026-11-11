@@ -59,20 +59,23 @@ class App:
         self.voice = voice.Voice(cfg['voice'], cfg['edgeVoice'], cfg['rate'], cfg['pitch'], cfg['kokoroVoice'], config.MODELS)
         self.warm = brain.Warm()
         self.game, self.gen, self.frames, self.seen, self.looking = None, 0, [], '', None
-        self.screen = capture.Screen(active=lambda: bool(self.game))
+        self._games, self._pin = games.index(), games.pinned()   # in memory: the hook asks in_game() on every press
+        self.screen = capture.Screen(active=self.game_in_front)   # not self.game: that stays set after an alt-tab
         self.turns, self.last, self.last_q, self.spoil_next = [], '', '', False
         self.down_at, self._spoke_at, self.hk = 0, 0, None
-        self.listener = listen.Listener(self.ears, self.heard, self.listen_muted, cfg['followUpSeconds'], self.woke, self.hint)
+        self.listener = listen.Listener(self.ears, self.heard, self.listen_muted, cfg['followUpSeconds'], self.woke, self.hint,
+                                        front=self.game_in_front)
         if cfg['listen']:
             self.set_listen(True, quiet=True)
-        self._games, self._pin = games.index(), games.pinned()   # in memory: the hook asks in_game() on every press
         threading.Thread(target=icons.prefetch, args=(self._games, notes.FOLDER), daemon=True).start()   # not on the first question
         threading.Thread(target=self._watch_game, daemon=True).start()
 
     def in_game(self):
-        """Is a game in front right now? No file reads: it runs inside the keyboard hook."""
-        if self.cfg['hotkeyEverywhere']:
-            return True
+        """Does the hotkey work right now? No file reads: it runs inside the keyboard hook."""
+        return bool(self.cfg['hotkeyEverywhere']) or self.game_in_front()
+
+    def game_in_front(self):
+        """Is a game really in front? What the screen memory and the open mic follow; hotkeyEverywhere doesn't count."""
         exe, title = games.win.front()
         if not exe:
             return False
@@ -91,6 +94,10 @@ class App:
                     self.game = g
             except Exception as e:
                 print('game:', e)
+            try:
+                self.listener.tick()   # listen mode: the mic open only while a game is in front
+            except Exception as e:
+                print('mic:', e)
             time.sleep(2)
 
     @property
@@ -153,7 +160,7 @@ class App:
         if self.voice.busy():
             self._spoke_at = now
             return True
-        return now - self._spoke_at < 0.5 or bool(self.hk and self.hk.held) or not self.in_game()
+        return now - self._spoke_at < 0.5 or bool(self.hk and self.hk.held) or not self.game_in_front()
 
     def woke(self):
         self.voice.say('Yes?')
