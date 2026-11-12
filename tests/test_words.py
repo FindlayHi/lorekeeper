@@ -2,7 +2,7 @@ import os, sys, tempfile
 
 os.environ['LOREKEEPER_DIR'] = tempfile.mkdtemp()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import brain, capture, commands, notes, voice  # noqa: E402
+import brain, capture, commands, lookup, notes, voice  # noqa: E402
 
 
 def test_commands():
@@ -30,6 +30,16 @@ def test_screen_words():
     assert not capture.wants('what does the Shadow Bullets synergy do')
     assert capture.wants('What perks do I have equipped right now?') and capture.wants('show my loadout')
     assert not capture.wants('what does dead hard do')
+    assert not capture.wants('What should I do before fighting Margit?')   # "before" as in time order, not "what did it say before"
+    assert capture.wants('what did that sign say before?') and capture.EARLIER.search('what did it say before that')
+
+
+def test_a_question_that_names_its_subject_is_still_looked_up_with_a_screenshot():
+    for q in ('How do I beat Margit here?', 'What does this perk Dead Hard do?', 'How much damage does the Flakker do?'):
+        assert lookup.named(q), q
+    for q in ('what is this', 'what did I just get', 'How do I beat this boss?', 'Is that a good perk?', 'what am I fighting',
+              'What perks do I have equipped right now?', 'what did it say a couple of minutes ago'):
+        assert not lookup.named(q), q
     assert capture.JUST.search('what synergy did I just get')
 
 

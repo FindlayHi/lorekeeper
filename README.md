@@ -85,7 +85,7 @@ Tray → **AI** picks who answers:
 | **OpenAI API** | an API key (tray → AI → **API key…**) | pay per use |
 | **Custom server…** | any OpenAI-compatible `/v1` address: OpenRouter, Groq, llama.cpp, vLLM… | key optional |
 
-Pick one, then pick its model from the list under it, and **Test**. Lorekeeper always fetches the game's wiki pages before it asks, so a model with no web search still answers from the wiki. When the pages don't cover it, it says so rather than guessing. Keys are kept in Windows Credential Manager, never in the settings file.
+Pick one, then pick its model from the list under it, and **Test**. Lorekeeper always fetches the game's wiki pages before it asks, so a model with no web search still answers from the wiki. When the pages don't cover it, it says so rather than guessing. Keys are kept in Windows Credential Manager, never in the settings file, one per server: a key is only ever sent to the server you typed it for.
 
 <details>
 <summary><b>From source</b> (Python 3.10+)</summary>
@@ -187,6 +187,7 @@ Everything per game is a plain file you can edit, in `%APPDATA%\Lorekeeper\games
 <summary><b>🧩 Gotchas</b></summary>
 <br>
 
+- **Picked the game in the tray?** Lorekeeper doesn't know which window is the game until you use the hotkey in it once. From then on the screen memory and listen mode follow that window only, not whatever else is in front.
 - **Game running as admin?** Windows keeps its keys from non-admin apps, so run Lorekeeper as admin too.
 - **Exclusive fullscreen** covers the box on that screen, but the voice still works. If a game shows black to screen capture, Lorekeeper says so and goes by your words.
 - **Anti-cheat:** Lorekeeper reads the screen the way Discord and OBS do, and watches one hotkey like push-to-talk. It never touches the game's memory or files. "Clip it" sends one key press, to Steam.
@@ -207,7 +208,7 @@ python lorekeeper.py --voices                         # sample wavs of every voi
 
 ## Privacy & usage counts
 
-Your voice and its transcription stay on your PC. Your question (and a screenshot, when it asks about the screen) goes to the AI you picked: Claude through your own Claude Code login, or your Ollama / LM Studio (which stay on your PC) or API provider. Wiki searches go to the game's wiki. Nothing else about what you play or say leaves your PC. The screen is only remembered, and in listen mode the mic only open, while a game is in front.
+Your voice and its transcription stay on your PC. Your question (and a screenshot, when it asks about the screen) goes to the AI you picked: Claude through your own Claude Code login, or your Ollama / LM Studio (which stay on your PC) or API provider. Wiki searches go to the game's wiki. Nothing else about what you play or say leaves your PC. The screen is only remembered, and in listen mode the mic only open, while a game is in front. With **Use the screen** unticked in the tray, the screen is not looked at at all.
 
 To know how many people use it, Lorekeeper sends an **anonymous count** to [PostHog](https://posthog.com): an `installed` event once, and an `active` event at most once a day. Each carries only:
 

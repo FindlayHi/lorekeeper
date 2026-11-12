@@ -50,6 +50,17 @@ def test_match_by_exe_and_title():
     assert games.match(os.path.join(er['dir'], 'Game', 'eldenring.exe'), '', gs)['name'] == 'ELDEN RING'
     assert games.match(r'C:\elsewhere\bg3.exe', "Baldur's Gate 3 (1.0)", gs)['name'] == "Baldur's Gate 3"
     assert games.match(r'C:\Windows\notepad.exe', 'Untitled - Notepad', gs) is None
+    assert games.match(r'C:\elsewhere\er.exe', 'ELDEN RING™', gs)['name'] == 'ELDEN RING'
+    assert games.match(r'C:\elsewhere\bg3.exe', 'Baldurs Gate 3 - Vulkan', gs)['name'] == "Baldur's Gate 3"
+
+
+def test_a_title_that_only_holds_a_games_name_is_not_that_game():
+    gs = [{'name': n, 'id': '', 'source': 'steam', 'dir': 'D:\\S\\' + n} for n in ('Rust', 'Hades', 'Control', 'Portal', 'Among Us')]
+    for title in ('Trusted logins - KeePass', 'Lampshades invoice.docx - Word', 'Quality control - Slack',
+                  'Bank - Customer portal - Brave', 'Inbox - among users - Outlook', 'Rusty Lake', 'Portals of Phereon'):
+        assert games.match(r'C:\Apps\other.exe', title, gs) is None, title
+    assert games.match(r'C:\Apps\other.exe', 'Hades', gs)['name'] == 'Hades'
+    assert games.match(r'C:\Apps\other.exe', 'Among Us - v2024', gs)['name'] == 'Among Us'
 
 
 def test_epic_manifest():

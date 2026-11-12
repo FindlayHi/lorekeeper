@@ -360,6 +360,18 @@ def own_guides(question, game, folder, most=4000):
     return '\n\n'.join(out[:2])
 
 
+POINTING = set(stems(   # words that point at the screen or back in time, and name nothing to look up
+    'screen earlier right while back previous previously looking holding hovering fighting equipped saved remembered picked '
+    'found unlocked looted triggered activated have loadout inventory stats hand this that these those thing called named '
+    'says said means minutes seconds moment couple than much many'))
+
+
+def named(question):
+    """The words of the question that name what it's about, as stems; empty when it only points ("what is this?",
+    "what did I just get?"), which the screen answers and a search can't."""
+    return words(question) - VERBS - POINTING - {'where', 'what', 'next'}
+
+
 def wiki(question, game, pages=2, folder='', progress=''):
     """'Source: <url>\n<text>' blocks for the prompt, or '' when the search finds nothing (the model searches itself).
     progress: the player's latest notes. "Where do I go next?" names nothing, so their last place or item is what to look up."""

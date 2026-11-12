@@ -254,14 +254,21 @@ def key(s):
     return re.sub(r'[^a-z0-9]', '', s.lower())
 
 
+def title_words(s):
+    """A name or window title as its words: "ELDEN RING™" -> "elden ring", "Baldur's Gate 3 (1.0)" -> "baldurs gate 3 1 0"."""
+    return ' '.join(re.findall(r'[a-z0-9]+', re.sub(r"['’]", '', (s or '').lower())))
+
+
 def match(exe, title, games):
-    """The game that exe belongs to (deepest install folder wins), else one whose name is in the window title."""
+    """The game that exe belongs to (deepest install folder wins), else one whose name the window title starts with.
+    Whole words, from the start: a game's window is titled with its name, while "Trusted logins - KeePass" (Rust),
+    "Lampshades.docx - Word" (Hades) or "Customer portal - Brave" (Portal) only happen to hold one."""
     if exe:
         hits = [g for g in games if _under(exe, g['dir'])]
         if hits:
             return max(hits, key=lambda g: len(g['dir']))
-    t = key(title)
-    named = [g for g in games if len(key(g['name'])) >= 4 and key(g['name']) in t]
+    t = title_words(title) + ' '
+    named = [g for g in games if len(key(g['name'])) >= 4 and t.startswith(title_words(g['name']) + ' ')]
     return max(named, key=lambda g: len(g['name'])) if named else None
 
 
@@ -277,11 +284,27 @@ def find(words, games):
     return hit or {'name': ' '.join(w.capitalize() if w.islower() else w for w in words.split()), 'id': '', 'source': 'named', 'dir': ''}
 
 
-def pin(game, exe=''):
-    """Stick to this game until the exe in front changes (exe='': until unpinned)."""
+def pin(game, exe='', sticky=False):
+    """Stick to this game until another exe comes to the front. sticky, or no exe yet (picked in the tray): until unpinned.
+    A pin with no exe doesn't know the game's window; bind() gives it one."""
     os.makedirs(config.DIR, exist_ok=True)
     with open(PIN, 'w', encoding='utf-8') as f:
-        json.dump({'game': game, 'exe': exe, 'at': time.time()}, f)
+        json.dump({'game': game, 'exe': exe, 'sticky': sticky, 'at': time.time()}, f)
+
+
+def bind(exe):
+    """The pinned game's window is this exe (the hotkey was just used there) -> the pin. It stays until unpinned, as it
+    did before it had a window."""
+    p = pinned()
+    if p and not p.get('exe') and exe and not LAUNCHERS.search(exe):
+        pin(p['game'], exe, sticky=True)
+        p = pinned()
+    return p
+
+
+def pin_is(p, exe):
+    """Is exe the pinned game's own window? Never for a pin that has no window yet."""
+    return bool(p and p.get('exe') and exe) and os.path.normcase(p['exe']) == os.path.normcase(exe)
 
 
 def unpin():
@@ -304,7 +327,7 @@ def current(exe=None, title=None):
     if exe is None:
         exe, title = win.front()
     p = pinned()
-    if p and (not p['exe'] or not exe or LAUNCHERS.search(exe) or os.path.normcase(p['exe']) == os.path.normcase(exe)):
+    if p and (p.get('sticky') or not p['exe'] or not exe or LAUNCHERS.search(exe) or os.path.normcase(p['exe']) == os.path.normcase(exe)):
         return p['game'], exe   # alt-tabbed to Discord or a browser: still that game
     if p:
         unpin()   # a different game is in front now

@@ -2,20 +2,20 @@
   recent: a frame a second for the last 5 s ("what synergy did I just get": the banner faded before the key went down)
   long:   a frame every 10 s for the last 10 min ("what did that sign say a few minutes ago")
   saved:  "remember this [as the vault code]": kept on disk per game until deleted
-Recorded only while a game is in front (active()); once none has been for forget_s, the memory is dropped, so
+Recorded only while a game is in front and "Use the screen" is on (active()); once none has been for forget_s, the memory is dropped, so
 "earlier" never reaches back across a stretch spent in a browser or on the desktop.
 DXGI duplication (dxcam) sees most fullscreen games where GDI gets black. Frames are kept as JPEG bytes (~100 KB),
 in memory; only the ones sent with a question touch disk (temp, deleted after)."""
 import collections, io, os, re, tempfile, threading, time
 
 WANTS = re.compile(r"\b(this|that|these|those|here|on (?:my |the )?screen|just (?:got|get|picked|pick(?:ed)? up|found|find|unlocked|unlock|looted|triggered|activated|equipped)|"
-                   r"i'?m (?:looking at|holding|fighting|hovering)|what am i|earlier|before|ago|a while back|back there|previous(?:ly)?|"
+                   r"i'?m (?:looking at|holding|fighting|hovering)|what am i|earlier|before(?!\s+(?!that\b|this\b)[a-z])|ago|a while back|back there|previous(?:ly)?|"
                    r"(?:i )?saved|remembered|right now|(?:have|got) equipped|equipped right now|do i have|my (?:perks?|loadout|build|inventory|items?|stats|skills?|hand))\b", re.I)
 JUST = re.compile(r'\bjust\b|\ba (?:second|moment|sec) ago\b|\bthat (?:popped|came) up\b', re.I)
 NUM = {'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
        'few': 3, 'couple': 2, 'couple of': 2}
 AGO = re.compile(r'\b(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|few|couple(?: of)?)\s+(second|sec|minute|min)s?\s+ago\b', re.I)
-EARLIER = re.compile(r'\b(earlier|before|a while (?:ago|back)|back there|previous(?:ly)?)\b', re.I)
+EARLIER = re.compile(r'\b(earlier|before(?!\s+(?!that\b|this\b)[a-z])|a while (?:ago|back)|back there|previous(?:ly)?)\b', re.I)
 SAVED = re.compile(r'\b(saved|remembered|the (?:screen|one|thing|spot|map|code|clue) i (?:saved|kept))\b', re.I)
 WIDE, LONG_WIDE = 1280, 1024
 
@@ -87,6 +87,13 @@ class Screen:
                 if now - self.last_long >= self.long_every:
                     self.long.append((now, jpeg(img, LONG_WIDE)))
                     self.last_long = now
+
+    def forget(self):
+        """Drop every remembered frame now ("Use the screen" was switched off)."""
+        with self.lock:
+            self.recent.clear()
+            self.long.clear()
+        self.full = None
 
     def now(self):
         """Grab one this instant (at key-down) -> every remembered frame, oldest first, ending with it: [(time, jpeg)]."""
