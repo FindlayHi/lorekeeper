@@ -9,7 +9,7 @@ import brain, config  # noqa: E402
 
 class Fake(BaseHTTPRequestHandler):
     """Replies with whatever the test put in `reply`: (status, body str or list of SSE chunks)."""
-    reply, got = (200, []), []
+    reply, got, redirect = (200, []), [], None   # redirect: where the first GET is sent on to
 
     def log_message(self, *a):
         pass
@@ -30,6 +30,11 @@ class Fake(BaseHTTPRequestHandler):
 
     def do_GET(self):
         Fake.got.append(('GET', self.path, self.headers.get('Authorization'), None))
+        if Fake.redirect and len(Fake.got) == 1:
+            self.send_response(302)
+            self.send_header('Location', Fake.redirect)
+            self.end_headers()
+            return
         self._send()
 
     def do_POST(self):
@@ -43,7 +48,7 @@ def server(monkeypatch):
     s = ThreadingHTTPServer(('127.0.0.1', 0), Fake)
     threading.Thread(target=s.serve_forever, daemon=True).start()
     Fake.got = []
-    monkeypatch.setattr(brain, 'key', lambda: '')
+    monkeypatch.setattr(brain, 'key', lambda cfg=None: '')
     cfg = {**config.DEFAULTS, 'ai': 'openai', 'aiUrl': f'http://127.0.0.1:{s.server_port}/v1', 'aiModel': 'quick', 'aiDeepModel': 'deep'}
     brain.use(cfg)
     yield cfg
@@ -128,10 +133,60 @@ def test_an_answer_streams_without_the_thinking(server):
 
 
 def test_the_key_goes_as_a_bearer_token(server, monkeypatch):
-    monkeypatch.setattr(brain, 'key', lambda: 'sk-test')
+    monkeypatch.setattr(brain, 'key', lambda cfg=None: 'sk-test')
     Fake.reply = (200, chunks('ok'))
     brain.ask(brain.start('haiku'), 'hi')
     assert Fake.got[0][2] == 'Bearer sk-test'
+
+
+class Ring:
+    """keyring, in memory."""
+    def __init__(self, **saved):
+        self.saved = dict(saved)
+
+    def get_password(self, service, name):
+        return self.saved.get(name)
+
+    def set_password(self, service, name, k):
+        self.saved[name] = k
+
+    def delete_password(self, service, name):
+        del self.saved[name]
+
+
+def test_a_key_is_kept_for_one_server_and_sent_nowhere_else(monkeypatch):
+    ring = Ring()
+    monkeypatch.setitem(sys.modules, 'keyring', ring)
+    openai, ollama = {'aiUrl': 'https://api.openai.com/v1'}, {'aiUrl': 'http://localhost:11434/v1'}
+    brain.set_key('sk-openai', openai)
+    assert brain.key(openai) == 'sk-openai' and brain.key({'aiUrl': 'https://API.openai.com/v1/'}) == 'sk-openai'
+    assert brain.key(ollama) == '' and brain.key({'aiUrl': 'http://api.openai.com/v1'}) == '' and brain.key({}) == ''
+    assert 'Authorization' not in brain._req(ollama, '/models').headers
+    assert brain._req(openai, '/models').headers['Authorization'] == 'Bearer sk-openai'
+    brain.set_key('', openai)
+    assert brain.key(openai) == '' and not ring.saved
+
+
+def test_an_older_versions_single_key_becomes_the_key_of_the_server_in_use(monkeypatch):
+    ring = Ring(**{'ai-key': 'sk-old'})
+    monkeypatch.setitem(sys.modules, 'keyring', ring)
+    openai, other = {'aiUrl': 'https://api.openai.com/v1'}, {'aiUrl': 'https://elsewhere.example/v1'}
+    assert brain.key(openai) == 'sk-old' and ring.saved == {'ai-key:https://api.openai.com': 'sk-old'}
+    assert brain.key(other) == ''
+
+
+def test_a_redirect_to_another_server_goes_without_the_key(server, monkeypatch):
+    monkeypatch.setattr(brain, 'key', lambda cfg=None: 'sk-test')
+    other = ThreadingHTTPServer(('127.0.0.1', 0), Fake)
+    threading.Thread(target=other.serve_forever, daemon=True).start()
+    Fake.redirect = f'http://127.0.0.1:{other.server_port}/v1/models'
+    Fake.reply = (200, json.dumps({'data': [{'id': 'm'}]}))
+    try:
+        assert brain.models(server) == ['m']
+    finally:
+        Fake.redirect = None
+        other.shutdown()
+    assert [g[2] for g in Fake.got] == ['Bearer sk-test', None]
 
 
 def test_warm_keeps_an_http_session_for_the_same_model(server):

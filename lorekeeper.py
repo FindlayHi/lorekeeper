@@ -145,7 +145,7 @@ class App:
         self.warm = brain.Warm()
         self.game, self.gen, self.frames, self.seen, self.looking = None, 0, [], '', None
         self._games, self._pin = games.index(), games.pinned()   # in memory: the hook asks in_game() on every press
-        self.screen = capture.Screen(active=self.game_in_front)   # not self.game: that stays set after an alt-tab
+        self.screen = capture.Screen(active=lambda: bool(self.cfg['screen']) and self.game_in_front())   # not self.game: that stays set after an alt-tab
         self.turns, self.last, self.last_q, self.spoil_next = [], '', '', False
         self.down_at, self._spoke_at, self.hk = 0, 0, None
         self.listener = listen.Listener(self.ears, self.heard, self.listen_muted, cfg['followUpSeconds'], self.woke, self.hint,
@@ -157,10 +157,17 @@ class App:
 
     def in_game(self):
         """Does the hotkey work right now? No file reads: it runs inside the keyboard hook."""
-        return bool(self.cfg['hotkeyEverywhere']) or self.game_in_front()
+        return bool(self.cfg['hotkeyEverywhere']) or self.game_in_front() or self._unbound_pin()
+
+    def _unbound_pin(self):
+        """A game picked in the tray whose window isn't known yet, and something that isn't a launcher in front: the
+        hotkey works there, and using it (down) is what says "this window is the game"."""
+        exe, _ = games.win.front()
+        return bool(self._pin) and not self._pin.get('exe') and bool(exe) and not games.LAUNCHERS.search(exe)
 
     def game_in_front(self):
-        """Is a game really in front? What the screen memory and the open mic follow; hotkeyEverywhere doesn't count."""
+        """Is a game really in front? What the screen memory and the open mic follow; hotkeyEverywhere doesn't count,
+        and a pinned game counts only in its own window: with Hades pinned, a password manager in front is not Hades."""
         exe, title = games.win.front()
         if not exe:
             return False
@@ -168,7 +175,7 @@ class App:
             return True   # an emulator, or the RomM web player
         if games.LAUNCHERS.search(exe):
             return False
-        return bool(self._pin) or bool(games.match(exe, title, self._games))
+        return games.pin_is(self._pin, exe) or bool(games.match(exe, title, self._games))
 
     def _watch_game(self):
         while True:   # cheap: one window call and a list scan; keeps the tray and the screen buffer current
@@ -265,6 +272,8 @@ class App:
         self.gen += 1
         self.voice.stop()
         self.down_at = time.time()
+        if self._pin and not self._pin.get('exe'):
+            self._pin = games.bind(games.win.front()[0])   # a game picked in the tray: this window is it
         g, _ = games.current()
         self.game = g or self.game
         try:
@@ -357,7 +366,7 @@ class App:
             g = games.find(arg, games.index())
             exe, _ = games.win.front()
             games.pin(g, '' if games.LAUNCHERS.search(exe or '') else exe)
-            self.game = g
+            self.game, self._pin = g, games.pinned()
             return self.say(q, f"Got it, {g['name']}.")
         if action == 'auto':
             games.unpin()
@@ -437,7 +446,11 @@ class App:
             self.voice.say("I couldn't see the screen, so going by your words.")
         now = time.time()
         self.turns = [t for t in self.turns if now - t['t'] < TURN_SECS][-3:]
-        wiki = '' if shots or saved or kit else self.lore(q) or lookup.wiki(q, self.game and self.game['name'], folder=notes.FOLDER, progress=notes.read(self.game, 3))   # a screenshot names the thing; the model searches then
+        # With a screenshot or the gear, the wiki is still fetched if the question itself names something ("how do I
+        # beat Margit here", "how much damage does the Flakker do"). Not for a bare "what is this?" (the screen names
+        # it, and the model searches then), a saved screen, or a tooltip being compared ("is this better than my helm").
+        look_up = not (shots or saved or kit) or (not saved and not (shots and gear.wants(q)) and bool(lookup.named(q)))
+        wiki = (self.lore(q) or lookup.wiki(q, self.game and self.game['name'], folder=notes.FOLDER, progress=notes.read(self.game, 3))) if look_up else ''
         wiki = '\n\n'.join(x for x in (romm.context(self.game, q), wiki) if x)   # RomM walkthroughs first: they're the player's own
         text = brain.request(q, self.game, notes.read(self.game), self.turns, wiki, kit, seen)
         spoken = []
@@ -504,6 +517,8 @@ def tray(app, box):
         def do(*_):
             app.cfg[k] = not app.cfg[k]
             config.save(app.cfg)
+            if k == 'screen' and not app.cfg[k]:
+                app.screen.forget()   # off means off: what was remembered goes now, not a minute from now
         return do
 
     def quit_(icon, _):
@@ -704,8 +719,8 @@ def tray(app, box):
                                        show='*', parent=box.root)
             if k is None:
                 return
-            brain.set_key(k.strip())
-            box.show('AI', 'Key saved.' if k.strip() else 'Key removed.', title=True)
+            brain.set_key(k.strip(), app.cfg)
+            box.show('AI', f'Key saved for {brain.name(app.cfg)}. It is only sent there.' if k.strip() else 'Key removed.', title=True)
             if brain.http():
                 fetch_models()
         box.root.after(0, ask)
@@ -767,7 +782,7 @@ def tray(app, box):
                 rows += [Item(m, action=use_model(m), radio=lambda m=m: app.cfg.get('aiModel') == m) for m in ai_models['ids']]
             else:
                 rows.append(Item(app.cfg.get('aiModel') or 'No models found', enabled=False, note='' if app.cfg.get('aiModel') else 'none'))
-            rows.append(Item('API key…', action=set_ai_key, note=lambda: 'set' if brain.key() else 'none'))
+            rows.append(Item('API key…', action=set_ai_key, note=lambda: 'set' if brain.key(app.cfg) else 'none'))
         else:
             rows += claude_rows()
         rows.append(Item('Test', action=test_ai, note=lambda: brain.name(app.cfg)))

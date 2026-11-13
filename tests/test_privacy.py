@@ -71,7 +71,44 @@ def test_game_in_front_ignores_hotkey_everywhere(monkeypatch):
     for exe in (CHROME, r'C:\Windows\explorer.exe', r'C:\Users\me\AppData\Local\Discord\app-1.0\Discord.exe', ''):
         a = app(monkeypatch, exe, everywhere=True)
         assert a.in_game() and not a.game_in_front()   # the hotkey works everywhere; the screen and mic don't follow it
-    assert not app(monkeypatch, CHROME, pin='Hades').game_in_front()   # a pinned game, but a browser in front
+    assert not app(monkeypatch, CHROME, pin={'game': {'name': 'Hades'}, 'exe': HADES}).game_in_front()   # a pinned game, but a browser in front
+
+
+KEEPASS, EMU = r'C:\Program Files\KeePass\KeePass.exe', r'C:\Games\odd-launcher\play.exe'
+
+
+def test_a_pinned_game_counts_only_in_its_own_window(monkeypatch):
+    pin = {'game': {'name': 'Chrono Trigger'}, 'exe': EMU, 'sticky': True}
+    assert app(monkeypatch, EMU, pin=pin).game_in_front()
+    for exe in (KEEPASS, r'C:\Program Files\BraveSoftware\brave.exe', r'C:\Program Files\Microsoft Office\WINWORD.EXE'):
+        a = app(monkeypatch, exe, pin=pin)
+        assert not a.game_in_front() and not a.in_game()   # no screen memory, no mic, no hotkey over a password manager
+
+
+def test_a_game_picked_in_the_tray_has_no_window_until_the_hotkey_is_used_there(monkeypatch):
+    games.pin({'name': 'Chrono Trigger'})   # tray: no window known
+    try:
+        assert not app(monkeypatch, CHROME, pin=games.pinned()).in_game()
+        a = app(monkeypatch, EMU, pin=games.pinned())
+        assert a.in_game() and not a.game_in_front()   # the hotkey works; nothing is watched or heard yet
+        a._pin = games.bind(EMU)   # what App.down does
+        assert a._pin['exe'] == EMU and a.game_in_front()
+        assert games.current(KEEPASS, 'Passwords')[0]['name'] == 'Chrono Trigger' and games.pinned()   # still pinned after an alt-tab
+        assert not app(monkeypatch, KEEPASS, pin=games.pinned()).game_in_front()
+    finally:
+        games.unpin()
+
+
+def test_use_the_screen_off_records_nothing_and_forgets(monkeypatch):
+    front = [True]
+    s = screen(monkeypatch, front)
+    for t in range(100, 112):
+        s.tick(t)
+    assert s.recent and s.long
+    s.forget()   # the tray's Use the screen, unticked
+    assert not s.recent and not s.long and s.full is None
+    import inspect
+    assert "self.cfg['screen']" in inspect.getsource(lorekeeper.App.__init__).split('capture.Screen(')[1].split('\n')[0]
 
 
 def test_listen_mode_ignores_audio_outside_a_game_even_with_hotkey_everywhere(monkeypatch):

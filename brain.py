@@ -1,7 +1,7 @@
 """The answer: `claude -p` on the user's Claude plan, with web search and nothing else; or any OpenAI-compatible server
 (Ollama, LM Studio, the OpenAI API, OpenRouter…) with the wiki pages fetched beforehand and no tools.
 Started at key-down with the game already known, so its ~1 s startup overlaps the talking."""
-import atexit, base64, json, os, re, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
+import atexit, base64, json, os, re, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 
 if sys.platform == 'win32':
     class _Quiet(subprocess.Popen):   # claude.cmd never flashes a console
@@ -52,7 +52,7 @@ DEEP = re.compile(r'\b(in detail|explain|everything about|full (story|lore)|tell
 
 
 # Which AI answers: tray → AI, or ai/aiUrl/aiModel/aiDeepModel in config.json. The key (if the server wants one) is in
-# Windows Credential Manager. use(cfg) at startup and after each change; until then it's Claude Code.
+# Windows Credential Manager, one per server. use(cfg) at startup and after each change; until then it's Claude Code.
 CFG = {}
 PRESETS = {'ollama': ('Ollama', 'http://localhost:11434/v1'), 'lmstudio': ('LM Studio', 'http://localhost:1234/v1'),
            'openai': ('OpenAI', 'https://api.openai.com/v1')}
@@ -83,21 +83,49 @@ def name(cfg=None):
     return 'Claude Code' if k == 'claude' else PRESETS[k][0] if k in PRESETS else 'your AI server'
 
 
-def key():
+def origin(url):
+    """'https://api.openai.com/v1/' -> 'https://api.openai.com': the server a key belongs to ('' if it isn't one)."""
+    u = urllib.parse.urlsplit((url or '').strip())
+    return f'{u.scheme}://{u.netloc}'.lower() if u.scheme in ('http', 'https') and u.netloc else ''
+
+
+KEY, OLD_KEY = 'ai-key:', 'ai-key'   # Credential Manager names: one key per server; OLD_KEY: the single key of older versions
+
+
+def key(cfg=None):
+    """The API key saved for the server in use, '' if none. A key is kept per server and only ever sent to that one:
+    an OpenAI key doesn't follow the player to Ollama, LM Studio or a custom address.
+    An older version kept one key for whichever server was picked: the first time it is asked for, it becomes the key
+    of the server in use (where it was already being sent) and the unnamed copy is removed."""
+    cfg = CFG if cfg is None else cfg
+    server = origin(cfg.get('aiUrl'))
+    if not server:
+        return ''
     try:
         import keyring
-        return keyring.get_password('Lorekeeper', 'ai-key') or ''
+        k = keyring.get_password('Lorekeeper', KEY + server) or ''
+        old = '' if k else keyring.get_password('Lorekeeper', OLD_KEY) or ''
+        if old:
+            keyring.set_password('Lorekeeper', KEY + server, old)
+            keyring.delete_password('Lorekeeper', OLD_KEY)
+        return k or old
     except Exception:
         return ''
 
 
-def set_key(k):
+def set_key(k, cfg=None):
+    """Save (or with '' remove) the key for the server in use."""
     import keyring
+    cfg = CFG if cfg is None else cfg
+    server = origin(cfg.get('aiUrl'))
+    if not server:
+        raise ValueError('No AI server address set.')
     if k:
-        keyring.set_password('Lorekeeper', 'ai-key', k)
-    else:
+        keyring.set_password('Lorekeeper', KEY + server, k)
+        return
+    for name in (KEY + server, OLD_KEY):
         try:
-            keyring.delete_password('Lorekeeper', 'ai-key')
+            keyring.delete_password('Lorekeeper', name)
         except Exception:
             pass
 
@@ -469,9 +497,23 @@ class ServerError(Exception):
     pass
 
 
+class _KeyStaysHome(urllib.request.HTTPRedirectHandler):
+    """A redirect to another server goes without the API key: urllib would carry the Authorization header along."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and origin(newurl) != origin(req.full_url):
+            for h in [h for h in new.headers if h.lower() == 'authorization']:
+                del new.headers[h]
+        return new
+
+
+_open = urllib.request.build_opener(_KeyStaysHome).open
+
+
 def _req(cfg, path, body=None):
     url = cfg.get('aiUrl', '').rstrip('/') + path
-    k = key()
+    k = key(cfg)
     return urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
                                   headers={'Content-Type': 'application/json', 'User-Agent': 'Lorekeeper',
                                            **({'Authorization': 'Bearer ' + k} if k else {})})
@@ -521,7 +563,7 @@ def ask_http(p, text, shots=(), on_text=lambda s: None, cfg=None):
             'messages': [{'role': 'system', 'content': p.system}, {'role': 'user', 'content': content(text, shots)}]}
     raw = ''
     try:
-        with urllib.request.urlopen(_req(cfg, '/chat/completions', body), timeout=TIMEOUT) as r:
+        with _open(_req(cfg, '/chat/completions', body), timeout=TIMEOUT) as r:
             for piece in sse(r):
                 raw += piece
                 shown = unthink(raw)
@@ -540,7 +582,7 @@ def models(cfg=None):
     """The server's model ids (GET /models), sorted; raises with explain()'s message when it can't."""
     cfg = CFG if cfg is None else cfg
     try:
-        with urllib.request.urlopen(_req(cfg, '/models'), timeout=5) as r:
+        with _open(_req(cfg, '/models'), timeout=5) as r:
             data = json.load(r).get('data') or []
     except Exception as e:
         raise ServerError(explain(e, cfg)) from None
