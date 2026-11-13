@@ -18,6 +18,7 @@ AGO = re.compile(r'\b(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|f
 EARLIER = re.compile(r'\b(earlier|before(?!\s+(?!that\b|this\b)[a-z])|a while (?:ago|back)|back there|previous(?:ly)?)\b', re.I)
 SAVED = re.compile(r'\b(saved|remembered|the (?:screen|one|thing|spot|map|code|clue) i (?:saved|kept))\b', re.I)
 WIDE, LONG_WIDE = 1280, 1024
+SAME = object()   # Screen._grab: the screen is as it was at the last frame kept
 
 
 def wants(question):
@@ -38,11 +39,13 @@ class Screen:
         self.long = collections.deque(maxlen=long_keep)
         self.long_every, self.active, self.cam, self.lock = long_every, active, None, threading.Lock()
         self.forget_s, self.last_long, self.away = forget_s, 0, None   # away: since when no game has been in front
+        self.fresh = False   # has the screen changed since the last long frame?
+        self.unkept = None   # a frame grabbed at key-down (now()) that the next tick hasn't kept yet
         self.full = None   # the key-down grab at full size: perk icons are too small in the 1280 copies
         threading.Thread(target=self._loop, daemon=True).start()
 
     def _grab(self):
-        """The screen now as a PIL image, or None (all black, or nothing new and nothing kept)."""
+        """The screen now as a PIL image; SAME when it hasn't changed since the last frame kept; or None (all black)."""
         from PIL import Image, ImageGrab
         img = None
         try:
@@ -54,7 +57,7 @@ class Screen:
                 if a is not None:
                     img = Image.fromarray(a)
                 elif self.recent:
-                    return Image.open(io.BytesIO(self.recent[-1][1]))
+                    return SAME
         except Exception:
             self.cam = False   # no DXGI here: GDI from now on
         if img is None:
@@ -81,19 +84,36 @@ class Screen:
             return
         self.away = None
         img = self._grab()
-        if img is not None:
-            with self.lock:
-                self.recent.append((now, jpeg(img)))
-                if now - self.last_long >= self.long_every:
-                    self.long.append((now, jpeg(img, LONG_WIDE)))
-                    self.last_long = now
+        if img is SAME and self.unkept is not None:
+            img = self.unkept   # unchanged since the key-down grab, which was never kept: that is the screen now
+        self.unkept = None
+        if img is None:
+            return
+        with self.lock:
+            if img is SAME and not self.recent:
+                return   # forgotten since the grab: the next changed frame starts the memory again
+            # an unchanged screen (a menu, a paused game) is the last frame again: the same bytes, nothing decoded or encoded
+            self.recent.append((now, self.recent[-1][1] if img is SAME else jpeg(img)))
+            self.fresh = self.fresh or img is not SAME
+            if now - self.last_long >= self.long_every:
+                if img is SAME and self.long and not self.fresh:
+                    small = self.long[-1][1]
+                else:
+                    small = jpeg(self._last() if img is SAME else img, LONG_WIDE)
+                self.long.append((now, small))
+                self.last_long, self.fresh = now, False
+
+    def _last(self):
+        """The newest kept frame, decoded."""
+        from PIL import Image
+        return Image.open(io.BytesIO(self.recent[-1][1]))
 
     def forget(self):
         """Drop every remembered frame now ("Use the screen" was switched off)."""
         with self.lock:
             self.recent.clear()
             self.long.clear()
-        self.full = None
+        self.full = self.unkept = None
 
     def now(self):
         """Grab one this instant (at key-down) -> every remembered frame, oldest first, ending with it: [(time, jpeg)]."""
@@ -101,10 +121,15 @@ class Screen:
             img = self._grab()
         except Exception:
             img = None
-        self.full = img
+        if img is not None and img is not SAME and self.active():
+            self.unkept = img   # the next tick may be told "nothing changed" since this grab, not since its own last frame
         with self.lock:
+            same = self.recent[-1][1] if img is SAME and self.recent else None   # unchanged: the last frame's own bytes
+            if img is SAME:
+                img = self._last() if same else None
             out = sorted(set(self.long) | set(self.recent))
-        return out + ([(time.time(), jpeg(img))] if img is not None else [])
+        self.full = img
+        return out + ([(time.time(), same or jpeg(img))] if img is not None else [])
 
     @staticmethod
     def pick(frames, question, most=4):
