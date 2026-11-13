@@ -35,6 +35,7 @@ MARGIN = 0.05              # and better than the next icon (Dark Sense vs Kindre
 SIZES = {'diamond': (1.0,), 'square': (0.96, 1.02, 1.08), 'ring': (0.95, 1.05)}   # a square's patchy fill makes it look a little small
 WIDE = 1280                # finding works at this width
 PAGES = 6                  # wiki pages fetched for what was read
+MOST_ICON = 2_000_000      # bytes of one icon file: a perk icon is ~50 KB, and there are hundreds in a set
 
 
 # cartridges
@@ -188,9 +189,7 @@ def download(game, folder, r, s):
 
     def fetch(k):
         try:
-            lookup.check_url(files[k]['url'])
-            req = urllib.request.Request(files[k]['url'], headers={'User-Agent': lookup.UA})
-            return _art(lookup._opener.open(req, timeout=15).read())
+            return _art(lookup.read(files[k]['url'], timeout=15, most=MOST_ICON, ua=lookup.UA))
         except Exception:
             return None   # one bad file doesn't lose the set
     with ThreadPoolExecutor(6) as ex:

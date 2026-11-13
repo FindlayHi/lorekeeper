@@ -19,8 +19,9 @@ jobs:
       - name: Version matches the tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
+        env: { REF_NAME: '${{ github.ref_name }}' }   # through the environment, never pasted into the script: a tag's name is text whoever pushes it chooses
         run: |
-          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          $tag = $env:REF_NAME.TrimStart('v')
           $app = (Select-String -Path telemetry.py -Pattern "^VERSION = '(.+)'").Matches[0].Groups[1].Value
           if ($tag -ne $app) { throw "Tag ${tag} but telemetry.VERSION is ${app}, so the app would keep offering itself as an update" }
       - name: Dependencies
@@ -38,8 +39,9 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "self-test failed" }
       - name: Installer (Inno Setup)
         shell: pwsh
+        env: { REF_NAME: '${{ github.ref_name }}' }
         run: |
-          $v = '${{ github.ref_name }}'.TrimStart('v'); if ($v -notmatch '^\d') { $v = '0.0.0-dev' }
+          $v = $env:REF_NAME.TrimStart('v'); if ($v -notmatch '^\d') { $v = '0.0.0-dev' }
           if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) { choco install innosetup -y --no-progress }
           $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source; if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           & $iscc /Q "/DAppVersion=$v" packaging\lorekeeper.iss

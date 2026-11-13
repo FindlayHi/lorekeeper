@@ -3,8 +3,8 @@
 
 Connect: tray → Connect RomM… → approve the code in RomM (device pairing; no password typed here). The token lives in
 Windows Credential Manager (Lorekeeper/romm). Scopes: roms.read, roms.user.write (notes), me.read."""
-import json, re, threading, time, urllib.parse, urllib.request
-import config
+import json, re, threading, time, urllib.error, urllib.parse, urllib.request
+import brain, config
 
 SCOPES = ['roms.read', 'roms.user.write', 'me.read']
 NOTE_TITLE = 'Lorekeeper'
@@ -41,11 +41,33 @@ def forget():
         pass
 
 
+def _same_server(old, new):
+    """Is a redirect still the RomM it started at? The same origin, or the same host moving from http to https
+    (a proxy in front of RomM does that)."""
+    o, n = urllib.parse.urlsplit(old), urllib.parse.urlsplit(new)
+    return brain.origin(old) == brain.origin(new) or bool(
+        o.hostname and o.hostname == n.hostname and (o.scheme, n.scheme) == ('http', 'https'))
+
+
+class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
+    """A redirect to another server goes without the token: urllib would carry the Authorization header along."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and not _same_server(req.full_url, newurl):
+            for h in [h for h in new.headers if h.lower() == 'authorization']:
+                del new.headers[h]
+        return new
+
+
+_open = urllib.request.build_opener(_TokenStaysHome).open
+
+
 def _http(method, path, body=None, auth=True, base=None, timeout=6):
     req = urllib.request.Request((base or url()) + path, method=method, data=json.dumps(body).encode() if body is not None else None,
                                  headers={'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'Lorekeeper',
                                           **({'Authorization': 'Bearer ' + token()} if auth else {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _open(req, timeout=timeout) as r:
         data = r.read()
         return json.loads(data) if data and 'json' in r.headers.get('Content-Type', '') else data.decode('utf-8', 'replace')
 
@@ -56,6 +78,16 @@ def api(path, **q):
 
 
 # pairing
+
+def approve_link(base, r):
+    """The page to approve the code on, opened in the browser. The server names its path, but only a path on itself:
+    "@evil.example/x" stuck on the address would open another site, so anything else gets RomM's usual page."""
+    path = r.get('verification_path_complete')
+    link = base + path if isinstance(path, str) and re.fullmatch(r'/[^\s\\]*', path) and not path.startswith('//') else ''
+    if link and brain.origin(link) == brain.origin(base):
+        return link
+    return base + '/pair/device?user_code=' + urllib.parse.quote(str(r['user_code']), safe='')
+
 
 def pair(base, on_code, on_done):
     """Device pairing in the background: on_code(user_code, approve_url) at once, then on_done(username or None, error)."""
@@ -72,7 +104,7 @@ def pair(base, on_code, on_done):
                       auth=False, base=base)
         except Exception as e:
             return on_done(None, f"Couldn't reach RomM at {base}: {e}")
-        on_code(r['user_code'], base + r.get('verification_path_complete', '/pair/device?user_code=' + r['user_code']))
+        on_code(r['user_code'], approve_link(base, r))
         end = time.time() + r.get('expires_in', 600)
         while time.time() < end:
             time.sleep(r.get('interval', 5))
@@ -155,12 +187,20 @@ def find(name):
     return _game((exact or items)[0])
 
 
+BROWSERS = re.compile(r'\\(chrome|msedge|firefox|brave|opera|vivaldi)\.exe$', re.I)
+# A tab whose page is named RomM: the whole title, or RomM at either end of it ("Super Metroid | RomM - Google Chrome").
+# Spelled as RomM spells itself, and not just anywhere: "how to install romm - YouTube" is not the web player.
+PLAYER = re.compile(r'(?:^|[|·•—–-]\s)RomM(?=$|:|\s[|·•—–-])')
+
+
+def player(exe, title):
+    """Is this window the RomM web player: a browser on a RomM page?"""
+    return bool(BROWSERS.search(exe or '') and PLAYER.search(title or ''))
+
+
 def current(exe, title):
     """For an emulator or the RomM web player in front: the game, from RomM -> dict or None. Cached a minute per window."""
-    if not connected():
-        return None
-    browser = bool(re.search(r'\\(chrome|msedge|firefox|brave|opera|vivaldi)\.exe$', exe or '', re.I))
-    if not (EMULATORS.search(exe or '') or (browser and 'romm' in (title or '').lower())):
+    if not (EMULATORS.search(exe or '') or player(exe, title)) or not connected():   # the cheap check first: this runs every 2 s
         return None
     k = (exe, title)
     with _lock:

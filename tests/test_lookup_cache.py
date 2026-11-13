@@ -120,7 +120,9 @@ def test_get_sends_that_agent(monkeypatch):
     monkeypatch.setattr(lookup, 'check_url', lambda url: None)
     sent = []
     class R:
-        def read(self): return b'ok'
+        def read(self, most=-1): return b'ok'
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
     monkeypatch.setattr(lookup._opener, 'open', lambda req, timeout=4: sent.append(req.get_header('User-agent')) or R())
     lookup.get('https://x.wiki.gg/api.php')
     lookup.get('https://x.wiki.gg/wiki/A')

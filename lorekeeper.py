@@ -171,8 +171,8 @@ class App:
         exe, title = games.win.front()
         if not exe:
             return False
-        if romm.EMULATORS.search(exe) or (self.cfg.get('rommUrl') and 'romm' in (title or '').lower()):
-            return True   # an emulator, or the RomM web player
+        if romm.EMULATORS.search(exe) or (self.cfg.get('rommUrl') and romm.player(exe, title)):
+            return True   # an emulator, or the RomM web player: a browser tab on RomM, not any window with "romm" in its title
         if games.LAUNCHERS.search(exe):
             return False
         return games.pin_is(self._pin, exe) or bool(games.match(exe, title, self._games))
@@ -952,6 +952,7 @@ def main():
                                                '(click the ^ arrow by the clock if it is hidden).', 'Lorekeeper', 0x40)
         return
     trim(LOG)
+    threading.Thread(target=brain.sweep, daemon=True).start()   # what a killed Lorekeeper (an update does that) left in the temp folder
     import box as boxmod, hotkey
     ok, msg = brain.ready(cfg)
     if not ok:

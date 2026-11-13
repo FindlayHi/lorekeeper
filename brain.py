@@ -254,7 +254,6 @@ def start(model='haiku', spoilers=False, system=None, tools='WebSearch'):   # no
     if not claude:
         return None
     d = tempfile.mkdtemp(prefix='lorekeeper-')
-    atexit.register(shutil.rmtree, d, True)
     sp = os.path.join(d, 'system.md')   # a file: claude.cmd runs through cmd.exe, which cuts command lines at 8 KB
     with open(sp, 'w', encoding='utf-8') as f:
         f.write(system or system_prompt(spoilers))
@@ -275,11 +274,64 @@ def start(model='haiku', spoilers=False, system=None, tools='WebSearch'):   # no
 
 
 def stop(p):
-    if p and not isinstance(p, Http) and p.poll() is None:
+    """Ends a `claude -p` (if it's still running) and removes its temp folder."""
+    if not p or isinstance(p, Http):
+        return
+    if p.poll() is None:
         if sys.platform == 'win32':
             subprocess.run(['taskkill', '/T', '/F', '/PID', str(p.pid)], capture_output=True, creationflags=0x08000000)
         else:
             p.kill()
+        try:
+            p.wait(5)   # its folder can't go while it is still the process's working directory
+        except Exception:
+            pass
+    tidy(p)
+
+
+def tidy(p):
+    """The folder a `claude -p` ran in holds the notes and gear sent with the question (private.json, for the search
+    guard). It goes as soon as the process has stopped, not at exit: the updater force-kills the app, and nothing
+    registered with atexit runs then."""
+    d, p.dir = getattr(p, 'dir', None), None
+    for _ in range(3):
+        if not d or not os.path.exists(d):
+            break
+        shutil.rmtree(d, True)
+        if os.path.exists(d):
+            time.sleep(0.1)   # Windows: a child of the killed process may hold it a moment longer
+    try:
+        p.errors.close()   # a TemporaryFile: closing it deletes it
+    except Exception:
+        pass
+
+
+STALE = 600   # seconds: no answer takes longer than ASK_SECS, so a folder this old belongs to no running process
+
+
+def sweep(tmp=None, older=STALE):
+    """Removes what a Lorekeeper that was killed left in the temp folder: `claude -p` folders (system.md, private.json)
+    and the screenshots sent with a question. Called at startup -> how many were removed."""
+    tmp, now, gone = tmp or tempfile.gettempdir(), time.time(), 0
+    try:
+        names = os.listdir(tmp)
+    except OSError:
+        return 0
+    for n in names:
+        path = os.path.join(tmp, n)
+        try:
+            if not n.startswith('lorekeeper-') or now - os.path.getmtime(path) < older:
+                continue
+            if n.startswith('lorekeeper-shot-') and n.endswith('.jpg'):
+                os.remove(path)
+            elif os.path.isfile(os.path.join(path, 'system.md')):   # not the updater's folder or a voice file
+                shutil.rmtree(path)
+            else:
+                continue
+            gone += 1
+        except OSError:
+            pass
+    return gone
 
 
 IDLE_SECS = 60   # `claude -p` silent this long is hung: even a web search answers in seconds, not a minute
@@ -345,9 +397,15 @@ TAIL = re.compile(r'\n\s*(?:\*\*)?sources?:?(?:\*\*)?\s*(?:\n|$).*', re.I | re.S
 
 
 SENTENCE = re.compile(r'((?<=[.!?])\s+|\n+)')   # voice.split's boundaries, kept, so what's left splits the same way
-TLDS = r'com|net|org|io|gg|co|uk|de|ru|cn|xyz|me|ly|tv|app|dev|info|biz|site|online|link|shop|store|top|example'
+# Said as "evil dot ai", an ending has to come from a list: "dot" is also damage over time ("the dot is strong"),
+# so no endings that are plain words after it (in, is, it, to, live, pro, cloud, zone).
+TLDS = (r'com|net|org|io|gg|co|uk|de|ru|cn|xyz|me|ly|tv|app|dev|info|biz|site|online|link|shop|store|top|example|'
+        r'ai|cc|tk|ml|ga|cf|gq|pw|ws|ca|au|fr|nl|pl|br|jp|eu|ch|club|vip|icu|wiki|tech|website')
+# Written out, any word.ending is a site ("free-skins.cc", "claim-reward.tk"): new endings appear faster than a list
+# keeps up. The ending in lower case only, unless it's a listed one: "Mk.II" and a missed space ("damage.The") are not sites.
+SITE = rf'\b[\w-]+\.(?:(?-i:[a-z]{{2,}})|{TLDS})\b'
 OUTSIDE = re.compile(   # where a poisoned page would send the player: a site, an address, a number to call, their login
-    rf'https?:|www\.|\b[\w-]+\.(?:{TLDS})\b|\b(?:dot) (?:{TLDS})\b|\S@\S|'
+    rf'https?:|www\.|{SITE}|\b(?:dot) (?:{TLDS})\b|\S@\S|'
     r'(?:\+|\b)\d{1,3}[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b|\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b|'
     r'\b(?:your (?:password|login|account details|email)|credit card|card number|gift cards?|seed phrase|verify your account|'
     r'scan (?:the|this) qr)\b', re.I)   # "the vault password is" is a puzzle answer: only *your* password is a scam
@@ -384,6 +442,10 @@ NOTE_SKIP = {'the', 'and', 'but', 'for', 'with', 'what', 'where', 'how', 'who', 
              'has', 'got', 'get', 'does', 'did', 'should', 'can', 'are', 'was', 'its', 'into', 'from', 'about', 'next', 'then'}
 
 
+NOTE_DONE = re.compile(r'\b(?:beat|beaten|beating|defeat(?:ed|ing)?|kill(?:ed|ing)?|slain|slew|finish(?:ed|ing)?|'
+                       r'complet(?:e|ed|ing|ion)|clear(?:ed|ing)?|endings?|credits|won)\b', re.I)   # a note that moves the spoiler line
+
+
 def _note_words(text):
     return {re.sub(r'(?:ing|ed|es|s)$', '', w) if len(w) > 4 else w
             for w in re.findall(r"[a-z0-9]{2,}", text.lower()) if w not in NOTE_SKIP}
@@ -391,9 +453,12 @@ def _note_words(text):
 
 def note_ok(note, question):
     """A NOTE is kept only if it's short, has no links or orders, and shares a word with what the player said: the
-    question is what reveals their class or where they are, and a fetched page can't put words in the player's mouth."""
+    question is what reveals their class or where they are, and a fetched page can't put words in the player's mouth.
+    One that claims progress (a boss beaten, the game finished, an ending seen) moves the spoiler line, so the player
+    must have said as much: "Who is Ranni?" can't be answered with "NOTE: Finished the game, all Ranni endings seen"."""
     return (0 < len(note) <= NOTE_MOST and '\n' not in note and not NOTE_BAD.search(note)
-            and bool(_note_words(note) & _note_words(question)))
+            and bool(_note_words(note) & _note_words(question))
+            and (not NOTE_DONE.search(note) or bool(NOTE_DONE.search(question))))
 
 
 def split_note(answer, question, game=''):
@@ -418,38 +483,41 @@ def ask(p, text, shots=(), on_text=lambda s: None, keep=None):
         {'type': 'text', 'text': label},
         {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.b64encode(open(path, 'rb').read()).decode()}})]
     content.append({'type': 'text', 'text': text})
-    p.stdin.write(json.dumps({'type': 'user', 'message': {'role': 'user', 'content': content}}) + '\n')
-    p.stdin.close()
     answer, usd, streamed = '', 0, ''
     last, done, why = [time.time()], threading.Event(), []
-    threading.Thread(target=watch, args=(p, last, done, why), daemon=True).start()
     try:
-        for line in p.stdout:
-            last[0] = time.time()
-            try:
-                j = json.loads(line)
-            except ValueError:
-                continue
-            if j.get('type') == 'stream_event':
-                e = j.get('event', {})
-                if e.get('type') == 'message_start':
-                    streamed = ''
-                elif e.get('type') == 'content_block_delta' and e.get('delta', {}).get('type') == 'text_delta':
-                    streamed += e['delta']['text']
-                    on_text(streamed)
-            elif j.get('type') == 'result':
-                answer, usd = (j.get('result') or '').strip(), j.get('total_cost_usd', 0)
+        p.stdin.write(json.dumps({'type': 'user', 'message': {'role': 'user', 'content': content}}) + '\n')
+        p.stdin.close()
+        threading.Thread(target=watch, args=(p, last, done, why), daemon=True).start()
+        try:
+            for line in p.stdout:
+                last[0] = time.time()
+                try:
+                    j = json.loads(line)
+                except ValueError:
+                    continue
+                if j.get('type') == 'stream_event':
+                    e = j.get('event', {})
+                    if e.get('type') == 'message_start':
+                        streamed = ''
+                    elif e.get('type') == 'content_block_delta' and e.get('delta', {}).get('type') == 'text_delta':
+                        streamed += e['delta']['text']
+                        on_text(streamed)
+                elif j.get('type') == 'result':
+                    answer, usd = (j.get('result') or '').strip(), j.get('total_cost_usd', 0)
+        finally:
+            done.set()
+        if why:
+            print('claude -p killed:', why[0], flush=True)
+            return SLOW, 0
+        p.wait()
+        if not answer and p.returncode:
+            p.errors.seek(0)
+            err = p.errors.read(300)
+            answer = 'Claude Code is signed out. Sign in from the tray: AI, Sign in to Claude.' if re.search(r'log ?in|auth', err, re.I) else f'Claude failed: {err[:150]}'
+        return answer or 'No answer came back.', usd
     finally:
-        done.set()
-    if why:
-        print('claude -p killed:', why[0], flush=True)
-        return SLOW, 0
-    p.wait()
-    if not answer and p.returncode:
-        p.errors.seek(0)
-        err = p.errors.read(300)
-        answer = 'Claude Code is signed out. Sign in from the tray: AI, Sign in to Claude.' if re.search(r'log ?in|auth', err, re.I) else f'Claude failed: {err[:150]}'
-    return answer or 'No answer came back.', usd
+        stop(p)   # answered, hung or broken: the process is over, and its folder with the notes goes now
 
 
 # OpenAI-compatible: POST {aiUrl}/chat/completions, streamed as server-sent events
