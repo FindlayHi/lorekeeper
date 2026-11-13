@@ -92,6 +92,7 @@ import brain, capture, commands, config, games, gear, listen, lookup, notes, ico
 LOG = os.path.join(config.DIR, 'log.jsonl')
 FONT_KEYS = ('font', 'fontSize', 'boxFont', 'boxFontSize')   # tray → Reset font puts these back to the bundled pixel font
 TURN_SECS = 600
+TAP = 0.35   # seconds: the hotkey let go sooner than this was a tap to silence the voice, not a question
 
 def _rm(path):
     try:
@@ -147,7 +148,7 @@ class App:
         self._games, self._pin = games.index(), games.pinned()   # in memory: the hook asks in_game() on every press
         self.screen = capture.Screen(active=lambda: bool(self.cfg['screen']) and self.game_in_front())   # not self.game: that stays set after an alt-tab
         self.turns, self.last, self.last_q, self.spoil_next = [], '', '', False
-        self.down_at, self._spoke_at, self.hk = 0, 0, None
+        self.down_at, self._spoke_at, self.hk, self.let_go = 0, 0, None, 0   # let_go: the gen whose key press has ended
         self.listener = listen.Listener(self.ears, self.heard, self.listen_muted, cfg['followUpSeconds'], self.woke, self.hint,
                                         front=self.game_in_front)
         if cfg['listen']:
@@ -284,7 +285,13 @@ class App:
             self.box.show(f"🎧 {self.game['name'] if self.game else 'Listening'}…", '', stay=True)
         self.looking = threading.Thread(target=self.look, daemon=True)
         self.looking.start()
-        threading.Thread(target=self.warm.prime, args=(self.cfg['model'], self.cfg['spoilers']), daemon=True).start()
+        threading.Thread(target=self.prime, args=(self.gen,), daemon=True).start()
+
+    def prime(self, gen):
+        """Start the AI ahead, once the key has been held longer than a tap: a tap only silences the voice, and
+        starting a `claude -p` just to kill it a moment later is a second of work for nothing."""
+        time.sleep(max(0, self.down_at + TAP - time.time()))
+        self.warm.prime(self.cfg['model'], self.cfg['spoilers'], wanted=lambda: gen == self.gen and self.let_go != gen)
 
     def look(self, icons_too=True):
         """The screen at key-down, and what its icons show (Dead by Daylight perks...), read while the question is still being said."""
@@ -297,6 +304,7 @@ class App:
                 print('icons:', e)
 
     def cancel(self):
+        self.let_go = self.gen
         self.ears.stop()
         self.warm.drop()
         if self.box:
@@ -304,9 +312,9 @@ class App:
 
     @guarded()
     def up(self):
-        gen = self.gen
+        gen = self.let_go = self.gen   # before anything else: prime() must not start an AI for a key already let go
         audio = self.ears.stop()
-        if time.time() - self.down_at < 0.35:   # a tap: that just stopped the voice
+        if time.time() - self.down_at < TAP:   # a tap: that just stopped the voice
             self.warm.drop()
             return self.box and self.box.hide()
         q = self.ears.text(audio, self.hint())

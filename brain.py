@@ -677,10 +677,11 @@ class Warm:
     def __init__(self):
         self.p, self.lock = None, threading.Lock()
 
-    def prime(self, model, spoilers):
+    def prime(self, model, spoilers, wanted=lambda: True):
+        """wanted: asked under the lock, so a drop() that came first (the key was only tapped) is not undone."""
         with self.lock:
             stop(self.p)
-            self.p = start(model, spoilers)
+            self.p = start(model, spoilers) if wanted() else None
 
     def take(self, model, spoilers):
         with self.lock:

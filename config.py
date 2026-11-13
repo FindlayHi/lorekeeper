@@ -52,12 +52,35 @@ broken = ''   # why config.json couldn't be read this run, if it couldn't: main(
 BROKEN = "Your settings file couldn't be read, so defaults are in use. The old one is kept as config.bad.json."
 
 
+_read = {}   # path -> ((mtime, size), parsed)
+
+
+def read_json(path):
+    """A JSON file, parsed again only when the file has changed (its time or size): the game watcher asks for the
+    settings, the games index and the pinned game every couple of seconds. Raises what open and json.load raise.
+    The caller gets the shared copy and must not change it."""
+    st = os.stat(path)
+    stamp = (st.st_mtime_ns, st.st_size)
+    hit = _read.get(path)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    with open(path, encoding='utf-8-sig') as f:   # -sig: Notepad may have saved it with a BOM
+        data = json.load(f)
+    _read[path] = (stamp, data)
+    return data
+
+
+def changed(path):
+    """We just wrote or removed this file ourselves: read it afresh next time, whatever its time says (two writes in
+    the same clock tick can share one)."""
+    _read.pop(path, None)
+
+
 def load():
     """The settings over the defaults. One that won't parse is copied to config.bad.json before anything saves over it."""
     global broken
     try:
-        with open(FILE, encoding='utf-8-sig') as f:   # -sig: Notepad may have saved it with a BOM
-            cfg = json.load(f)
+        cfg = read_json(FILE)
         if not isinstance(cfg, dict):
             raise ValueError('not a JSON object')
         return {**DEFAULTS, **cfg}
@@ -91,6 +114,7 @@ def write(path, text):
                     raise
                 time.sleep(0.1)
     finally:
+        changed(path)
         if os.path.exists(tmp):
             os.remove(tmp)
 

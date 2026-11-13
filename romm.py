@@ -18,15 +18,21 @@ _cache, _lock = {}, threading.Lock()
 # settings: the address in config.json, the token in Credential Manager
 
 def url():
-    return (config.load().get('rommUrl') or '').rstrip('/')
+    return (config.load().get('rommUrl') or '').rstrip('/')   # asked every couple of seconds: config.load re-reads only a changed file
+
+
+TOKEN_SECS = 30   # how long a token read from Credential Manager is good for: connected() is asked every couple of seconds
+_token = [0, '']   # when it was read, the token
 
 
 def token():
-    try:
-        import keyring
-        return keyring.get_password('Lorekeeper', 'romm') or ''
-    except Exception:
-        return ''
+    if time.time() - _token[0] > TOKEN_SECS:
+        try:
+            import keyring
+            _token[:] = [time.time(), keyring.get_password('Lorekeeper', 'romm') or '']
+        except Exception:
+            return ''
+    return _token[1]
 
 
 def connected():
@@ -34,6 +40,7 @@ def connected():
 
 
 def forget():
+    _token[:] = [0, '']
     try:
         import keyring
         keyring.delete_password('Lorekeeper', 'romm')
@@ -122,6 +129,7 @@ def pair(base, on_code, on_done):
             if t.get('access_token'):
                 import keyring
                 keyring.set_password('Lorekeeper', 'romm', t['access_token'])
+                _token[:] = [time.time(), t['access_token']]
                 cfg = config.load()
                 cfg['rommUrl'] = base
                 config.save(cfg)

@@ -1,7 +1,7 @@
 """Wiki text fetched before the model starts thinking: one DuckDuckGo search, then the top wiki pages' source.
 Most questions are answered from this in one pass, skipping the model's own search-then-fetch round trips (~10 s)."""
-import hashlib, html, ipaddress, json, os, re, socket, time, urllib.parse, urllib.request
-from concurrent.futures import ThreadPoolExecutor
+import hashlib, html, ipaddress, json, os, re, socket, threading, time, urllib.parse, urllib.request
+from concurrent.futures import Future, ThreadPoolExecutor
 import config
 
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
@@ -204,29 +204,39 @@ def _hosts():
 TRIED, RETRY = '~tried:', 7 * 24 * 3600   # a failed guess is remembered as TRIED+game -> when; old apps read the file as game -> host strings and ignore the extra keys
 
 
+_learning = threading.Lock()
+
+
 def _learn(game, host):
-    h = _hosts()
-    h[game.lower()] = host
-    if host:
-        h.pop(TRIED + game.lower(), None)
-    else:
-        h[TRIED + game.lower()] = str(int(time.time()))
-    os.makedirs(config.DIR, exist_ok=True)
-    with open(HOSTS, 'w', encoding='utf-8') as f:
-        json.dump(h, f, indent=1)
+    """Remember the game's wiki host, or ('') that guessing found none. The guess and the web search now run side by
+    side: a guess that found nothing never wipes a host the search results just gave."""
+    with _learning:
+        h = _hosts()
+        if not host and h.get(game.lower()):
+            return
+        h[game.lower()] = host
+        if host:
+            h.pop(TRIED + game.lower(), None)
+        else:
+            h[TRIED + game.lower()] = str(int(time.time()))
+        os.makedirs(config.DIR, exist_ok=True)
+        with open(HOSTS, 'w', encoding='utf-8') as f:
+            json.dump(h, f, indent=1)
 
 
 def guess_host(game):
-    """<game>.wiki.gg, then <game>.fandom.com, if either answers as a MediaWiki -> host or ''."""
+    """<game>.wiki.gg, else <game>.fandom.com, if either answers as a MediaWiki -> host or ''. Both asked at once."""
     base = re.sub(r'[^a-z0-9]', '', game.lower())
-    for host in (f'{base}.wiki.gg', f'{base}.fandom.com'):
+
+    def answers(host):
         try:
             j = json.loads(get(f'https://{host}/api.php?action=query&meta=siteinfo&format=json', timeout=3))
-            if j.get('query', {}).get('general'):
-                return host
+            return bool(j.get('query', {}).get('general'))
         except Exception:
-            pass
-    return ''
+            return False
+    hosts = (f'{base}.wiki.gg', f'{base}.fandom.com')
+    with ThreadPoolExecutor(len(hosts)) as ex:
+        return next((h for h, ok in zip(hosts, ex.map(answers, hosts)) if ok), '')
 
 
 def cart_host(game, folder):
@@ -249,16 +259,23 @@ def _gave_up_recently(h, g):
         return False
 
 
-def host_for(game, urls=(), folder=''):
-    """The game's wiki host: its cartridge's, known, learned, seen in search results, or guessed (again after a week)."""
+def known_host(game, folder=''):
+    """The game's wiki host if no request is needed to know it: its cartridge's, known, or learned. Else ''."""
     g = game.lower()
     if host := cart_host(game, folder):
         return host
     if g in KNOWN:
         return KNOWN[g]
     h = _hosts()
-    if h.get(g) and re.fullmatch(SUB, h[g]):   # a host saved by an older version, from a search result, is checked again
-        return h[g]
+    return h[g] if h.get(g) and re.fullmatch(SUB, h[g]) else ''   # a host saved by an older version, from a search result, is checked again
+
+
+def host_for(game, urls=(), folder=''):
+    """The game's wiki host: its cartridge's, known, learned, seen in search results, or guessed (again after a week)."""
+    g = game.lower()
+    if host := known_host(game, folder):
+        return host
+    h = _hosts()
     for u in urls:
         m = MEDIAWIKI.match(u)
         if m:
@@ -334,8 +351,8 @@ def strategywiki(question, game):
     nouns = {w for w in words(question) if w not in VERBS}
     if not nouns:
         return ''
-    if game not in _sw_pages:
-        j = json.loads(get(api + '&list=allpages&aplimit=500&apprefix=' + urllib.parse.quote(game + '/'), timeout=4))
+    if game not in _sw_pages:   # kept on disk for a day too: the next session doesn't ask again
+        j = json.loads(cached(api + '&list=allpages&aplimit=500&apprefix=' + urllib.parse.quote(game + '/'), PAGE_TTL, timeout=4))
         _sw_pages[game] = [p['title'] for p in j.get('query', {}).get('allpages', [])]
     url = lambda t: 'https://strategywiki.org/wiki/' + urllib.parse.quote(t.replace(' ', '_'))
     best = max(_sw_pages[game], key=lambda t: len(nouns & words(t.split('/', 1)[1])), default='')
@@ -343,15 +360,20 @@ def strategywiki(question, game):
         return url(best)
     if not _sw_pages[game]:
         return ''   # StrategyWiki has no guide for this game (or a different title for it)
-    # its search doesn't index page text well: load the game's pages once (batched, cached) and look for the nouns
+    # its search doesn't index page text well: load the game's pages once and look for the nouns. Up to three batches,
+    # asked for at once and kept on disk for a day; in memory only once all of them are in.
     if game not in _sw_text:
-        _sw_text[game] = {}
         titles = _sw_pages[game][:150]
-        for i in range(0, len(titles), 50):
-            j = json.loads(get(api + '&prop=revisions&rvprop=content&rvslots=main&titles=' + urllib.parse.quote('|'.join(titles[i:i + 50])), timeout=8))
-            for pg in j.get('query', {}).get('pages', {}).values():
-                rev = (pg.get('revisions') or [{}])[0]
-                _sw_text[game][pg['title']] = (rev.get('slots', {}).get('main', {}).get('*') or rev.get('*') or '').lower()
+
+        def batch(i):
+            j = json.loads(cached(api + '&prop=revisions&rvprop=content&rvslots=main&titles='
+                                  + urllib.parse.quote('|'.join(titles[i:i + 50])), PAGE_TTL, timeout=8))
+            revs = ((pg['title'], (pg.get('revisions') or [{}])[0]) for pg in j.get('query', {}).get('pages', {}).values())
+            return {t: (rev.get('slots', {}).get('main', {}).get('*') or rev.get('*') or '').lower() for t, rev in revs}
+        starts = range(0, len(titles), 50)
+        with ThreadPoolExecutor(len(starts)) as ex:
+            parts = list(ex.map(batch, starts))
+        _sw_text[game] = {t: text for part in parts for t, text in part.items()}
     score = lambda t: sum(_sw_text[game][t].count(n) for n in nouns)
     hit = max(_sw_text[game], key=score, default='')
     return url(hit) if hit and score(hit) else ''
@@ -385,37 +407,63 @@ def named(question):
     return words(question) - VERBS - POINTING - {'where', 'what', 'next'}
 
 
+FIND_SECS, WIKI_SECS = 4, 6   # finding the pages, and all of wiki(): the player is waiting, and past this the model's own search is quicker
+
+
+def _go(fn, *args):
+    """fn(*args) on a thread of its own -> its Future. A daemon thread: a request still out never holds up quitting."""
+    f = Future()
+
+    def run():
+        try:
+            f.set_result(fn(*args))
+        except Exception as e:
+            f.set_exception(e)
+    threading.Thread(target=run, daemon=True).start()
+    return f
+
+
+def _by(future, deadline, default):
+    """The future's result if it's in by the deadline and didn't fail, else default. What comes in late still fills
+    the caches (the pages on disk, the game's wiki host), so the next question is quick."""
+    try:
+        return future.result(timeout=max(0, deadline - time.time()))
+    except Exception:
+        return default
+
+
 def wiki(question, game, pages=2, folder='', progress=''):
     """'Source: <url>\n<text>' blocks for the prompt, or '' when the search finds nothing (the model searches itself).
-    progress: the player's latest notes. "Where do I go next?" names nothing, so their last place or item is what to look up."""
+    progress: the player's latest notes. "Where do I go next?" names nothing, so their last place or item is what to look up.
+    The lookups run side by side under one deadline (WIKI_SECS), not one after another with a timeout each: whatever
+    isn't in by then is left out, and the model searches for what's missing."""
     if progress and not words(question) - VERBS - {'where', 'what', 'next'}:
         question = question + ' ' + ' '.join(progress.strip().splitlines()[-2:])
-    urls = []
-    host = host_for(game, folder=folder) if game else ''
-    if host:
-        try:
-            urls = site_search(host, question, pages, game)
-        except Exception:
-            urls = []
+    start = time.time()
+    found_by, done_by = start + FIND_SECS, start + WIKI_SECS
+    host = known_host(game, folder) if game else ''
+
+    def on_wiki():   # the wiki's own search; a wiki not known yet is guessed first
+        h = host or host_for(game, folder=folder)
+        return site_search(h, question, pages, game) if h else []
+    web = lambda: _go(search, query(question, game))
+    # at once: the wiki's search, the walkthrough, and (only while the game's wiki isn't known) the web search
+    site = _go(on_wiki) if game else None
+    found = None if host else web()
+    guide = _go(strategywiki, question, game) if game and GUIDE_WORDS.search(question) else None   # "where do I go", "how do I beat": a walkthrough says it best
+    urls = _by(site, found_by, []) if site else []
     if not urls:
-        try:
-            found = search(query(question, game))
-        except Exception:
-            found = []
-        if game and not host and found:
-            host_for(game, found)   # learn the wiki for next time
+        found = _by(found or web(), found_by, [])   # the wiki's search found nothing: the web's
+        if game and not host:
+            for m in filter(None, map(MEDIAWIKI.match, found)):
+                _learn(game, m[1])   # learn the wiki for next time
+                break
         urls = rank(found)[:pages]
-    guide = ''
-    if game and GUIDE_WORDS.search(question):   # "where do I go", "how do I beat": a walkthrough says it best
-        try:
-            guide = strategywiki(question, game)
-        except Exception:
-            guide = ''
-        if guide and guide not in urls:
-            urls = urls[:pages] + [guide]
+    guide = _by(guide, found_by, '') if guide else ''
+    if guide and guide not in urls:
+        urls = urls[:pages] + [guide]
     mine = own_guides(question, game, folder) if game and folder else ''
     if not urls:
         return mine
-    with ThreadPoolExecutor(len(urls)) as ex:
-        texts = list(ex.map(lambda u: page(u, question), urls))
+    texts = [_by(f, done_by, '') for f in [_go(page, u, question) for u in urls]]
     return '\n\n'.join([f'Source: {u}\n{t}' for u, t in zip(urls, texts) if t] + ([mine] if mine else []))

@@ -234,13 +234,14 @@ def build():
     os.makedirs(config.DIR, exist_ok=True)
     with open(INDEX, 'w', encoding='utf-8') as f:
         json.dump(games, f, indent=1)
+    config.changed(INDEX)
     return games
 
 
 def index():
+    """The games index. Asked for every couple of seconds (the game watcher): the file is read again only when it has changed."""
     try:
-        with open(INDEX, encoding='utf-8') as f:
-            return json.load(f)
+        return config.read_json(INDEX)
     except (OSError, ValueError):
         return build()
 
@@ -290,6 +291,7 @@ def pin(game, exe='', sticky=False):
     os.makedirs(config.DIR, exist_ok=True)
     with open(PIN, 'w', encoding='utf-8') as f:
         json.dump({'game': game, 'exe': exe, 'sticky': sticky, 'at': time.time()}, f)
+    config.changed(PIN)
 
 
 def bind(exe):
@@ -308,6 +310,7 @@ def pin_is(p, exe):
 
 
 def unpin():
+    config.changed(PIN)
     try:
         os.remove(PIN)
     except OSError:
@@ -316,8 +319,7 @@ def unpin():
 
 def pinned():
     try:
-        with open(PIN, encoding='utf-8') as f:
-            return json.load(f)
+        return config.read_json(PIN)
     except (OSError, ValueError):
         return None
 
