@@ -120,6 +120,10 @@ def reason(e):
     return s if 0 < len(s) <= 120 and '\n' not in s and not PLAIN.search(s) else ''
 
 
+STILL = 8   # seconds with nothing said yet before Lorekeeper says it is still looking: the box may be off, or behind the game
+STAGES = {'wiki': 'Checking the wiki…', 'ai': 'Thinking…', 'WebSearch': 'Searching the web…', 'WebFetch': 'Reading a page…'}
+
+
 def guarded(fresh=False):
     """For the hotkey's and listen mode's threads: whatever fails on the way to an answer is logged, said and shown,
     instead of the thread dying with the box stuck on "…". Silent if the player has already asked something else.
@@ -137,11 +141,11 @@ def guarded(fresh=False):
 
 class App:
     def __init__(self, cfg, box=None):
-        import ears, capture
+        import capture
         self.cfg, self._box = cfg, box
+        self._bad_edit = bool(config.broken)   # the settings file can't be read, and the player has been told
         brain.use(cfg)
-        self.ears = ears.Ears(cfg['whisper'], cfg['whisperDevice'])
-        self.ears.mic = cfg['mic']
+        self.hear()
         self.voice = voice.Voice(cfg['voice'], cfg['edgeVoice'], cfg['rate'], cfg['pitch'], cfg['kokoroVoice'], config.MODELS)
         self.warm = brain.Warm()
         self.game, self.gen, self.frames, self.seen, self.looking = None, 0, [], '', None
@@ -191,7 +195,96 @@ class App:
                 self.listener.tick()   # listen mode: the mic open only while a game is in front
             except Exception as e:
                 print('mic:', e)
+            try:
+                self.reload()
+            except Exception as e:
+                print('settings:', e)
             time.sleep(2)
+
+    # settings
+    def hear(self):
+        """Load the speech model the settings name (at start, and when another is picked). One that has to be
+        downloaded first shows its progress in the box. A model already working stays in use until the new one is
+        ready, and for good if the new one can't be had."""
+        import ears
+        new, old = ears.Ears(self.cfg['whisper'], self.cfg['whisperDevice'], self.speech_download), getattr(self, 'ears', None)
+        new.mic = self.cfg['mic']
+
+        def use():
+            self.ears = new
+            if getattr(self, 'listener', None):
+                self.listener.ears = new
+
+        def swap():
+            new.ready.wait()
+            while getattr(self, 'hk', None) and self.hk.held:
+                time.sleep(0.1)   # not under a question being recorded
+            if new.model and self.ears is old:
+                use()
+        if old is not None and old.model:
+            threading.Thread(target=swap, daemon=True).start()
+        else:
+            use()
+
+    def speech_download(self, done, total, finished=None):
+        b = self._box
+        if not b:
+            return
+        if finished is None:
+            so_far = f'{done * 100 // total}%' if total else f'{done >> 20} MB'
+            b.show('Getting the speech model ready', f'Downloading the speech model (once): {so_far}.',
+                   stay=True, title=True)
+        elif finished:
+            b.show('Speech model ready', 'Lorekeeper can hear you. Hold the hotkey in a game and ask.', title=True)
+        else:
+            b.show('Speech model download failed', 'Check your internet connection. Lorekeeper tries again next time it starts.', title=True)
+
+    def reload(self):
+        """A hand edit of the settings file is in use a couple of seconds after it is saved, with no restart, and the
+        box says which settings. One saved with a mistake in it is said once, and the running settings stay."""
+        got = config.refresh(self.cfg)
+        if got is None:
+            if not self._bad_edit and self._box:
+                self._box.show('Settings file', "The settings file has a mistake in it, so your edit isn't in use yet. "
+                               'Fix it and save again.', title=True)
+            self._bad_edit = True
+            return
+        self._bad_edit = False
+        taken, wrong = got
+        if taken:
+            self.apply(taken)
+        if (taken or wrong) and self._box:
+            said = ([f"Now in use: {', '.join(sorted(taken))}."] if taken else []) + (
+                [f"Left as it was, the value is the wrong kind: {', '.join(sorted(wrong))}."] if wrong else [])
+            self._box.show('Settings file', ' '.join(said), title=True)
+
+    def apply(self, keys):
+        """Make the running app match settings that changed under it. The rest (models, spoilers, fonts, the screen
+        switch) are read from the settings each time they are used."""
+        cfg, v = self.cfg, self.voice
+        if keys & {'ai', 'aiUrl', 'aiModel', 'aiDeepModel', 'model', 'deepModel'}:
+            self.warm.drop()   # the process started ahead belongs to the old AI
+            brain.use(cfg)
+        v.kind, v.edge_voice, v.rate, v.pitch, v.kokoro_voice = cfg['voice'], cfg['edgeVoice'], cfg['rate'], cfg['pitch'], cfg['kokoroVoice']
+        if keys & {'whisper', 'whisperDevice'}:
+            self.hear()
+        self.ears.mic = cfg['mic']
+        self.listener.follow_s = cfg['followUpSeconds']
+        if self._box:
+            self._box.seconds = cfg['boxSeconds']
+        for key, binding in (('hotkey', self.hk), ('listenKey', getattr(self, 'lk', None))):
+            if key in keys and binding:
+                try:
+                    binding.set(cfg[key])
+                except ValueError as e:
+                    print(f'{key}:', e)
+        if 'screen' in keys and not cfg['screen']:
+            self.screen.forget()
+        if 'mic' in keys and self.listener.on and cfg['listen']:   # reopen on the new mic
+            self.listener.stop()
+            self.listener.start()
+        if cfg['listen'] != self.listener.on:
+            self.set_listen(cfg['listen'], quiet=True)
 
     @property
     def box(self):
@@ -317,6 +410,10 @@ class App:
         if time.time() - self.down_at < TAP:   # a tap: that just stopped the voice
             self.warm.drop()
             return self.box and self.box.hide()
+        if getattr(self.ears, 'getting', False):   # first run, or a new speech model: say so now, not after a minute's wait
+            import ears
+            self.warm.drop()
+            return self.say('', ears.WAIT)
         q = self.ears.text(audio, self.hint())
         if gen != self.gen:
             return
@@ -365,7 +462,7 @@ class App:
             return self.say(q, self.last or 'Nothing to repeat yet.')
         if action == 'clip':
             if not self.cfg['clipKeys']:
-                return self.say(q, 'No clip key set. Put your Steam clip key in the config as clipKeys.')
+                return self.say(q, 'No clip key set. Set one in the tray: Clip key.')
             import hotkey
             hotkey.press(self.cfg['clipKeys'])
             log({'game': g and g['name'], 'q': q, 'a': 'clipped'})
@@ -435,6 +532,13 @@ class App:
             return ''
 
     def answer(self, q, gen):
+        quiet = threading.Event()   # set once the answer has begun to come in, or the try is over
+        try:
+            return self._answer(q, gen, quiet)
+        finally:
+            quiet.set()
+
+    def _answer(self, q, gen, quiet):
         started = time.time()
         spoilers = self.cfg['spoilers'] or self.spoil_next
         self.spoil_next = False
@@ -458,12 +562,25 @@ class App:
         # beat Margit here", "how much damage does the Flakker do"). Not for a bare "what is this?" (the screen names
         # it, and the model searches then), a saved screen, or a tooltip being compared ("is this better than my helm").
         look_up = not (shots or saved or kit) or (not saved and not (shots and gear.wants(q)) and bool(lookup.named(q)))
-        wiki = (self.lore(q) or lookup.wiki(q, self.game and self.game['name'], folder=notes.FOLDER, progress=notes.read(self.game, 3))) if look_up else ''
-        wiki = '\n\n'.join(x for x in (romm.context(self.game, q), wiki) if x)   # RomM walkthroughs first: they're the player's own
-        text = brain.request(q, self.game, notes.read(self.game), self.turns, wiki, kit, seen)
         spoken = []
 
+        def stage(what):   # what is taking the time, in the box where the answer will be
+            if what in STAGES and gen == self.gen and self.box and not spoken:
+                self.box.show(q, STAGES[what], stay=True)
+
+        def still():   # and aloud, once, if it has been a while
+            if not quiet.wait(STILL) and gen == self.gen and not spoken:
+                self.voice.say('Still looking.')
+        threading.Thread(target=still, daemon=True).start()
+        if look_up:
+            stage('wiki')
+        wiki =(self.lore(q) or lookup.wiki(q, self.game and self.game['name'], folder=notes.FOLDER, progress=notes.read(self.game, 3))) if look_up else ''
+        wiki = '\n\n'.join(x for x in (romm.context(self.game, q), wiki) if x)   # RomM walkthroughs first: they're the player's own
+        text = brain.request(q, self.game, notes.read(self.game), self.turns, wiki, kit, seen)
+        stage('ai')
+
         def streamed(s):   # speak each sentence as it completes; the last, maybe partial, waits
+            quiet.set()
             if gen != self.gen:
                 return
             s = brain.spoken(s, self.game and self.game['name'] or '')   # the saved note and any Sources list are never spoken
@@ -476,7 +593,7 @@ class App:
             if self.box:
                 self.box.show(q, s, stay=True)
         try:
-            a, usd = brain.ask(p, text, saved + shots, streamed, brain.private(q, self.game, notes.read(self.game), self.turns, kit))
+            a, usd = brain.ask(p, text, saved + shots, streamed, brain.private(q, self.game, notes.read(self.game), self.turns, kit), stage)
         finally:
             for path, _ in shots:
                 _rm(path)
@@ -801,6 +918,41 @@ def tray(app, box):
             app.cfg[k] = config.DEFAULTS[k]
         config.save(app.cfg)
 
+    # what used to be in the settings file only
+    def choose(key, value, then=lambda v: None):
+        def do():
+            app.cfg[key] = value
+            config.save(app.cfg)
+            then(value)
+        return do
+
+    def choices(key, named, then=lambda v: None, other=str):
+        """A page of radio rows for one setting. A value set by hand that is none of them gets its own row, so the
+        page always shows what is in use."""
+        def page():
+            rows = dict(named)
+            if app.cfg[key] not in rows.values():
+                rows[other(app.cfg[key])] = app.cfg[key]
+            return [Item(label, action=choose(key, v, then), radio=lambda v=v: app.cfg[key] == v) for label, v in rows.items()]
+        return page
+
+    speech_page = choices('whisper', {'Quick (base.en)': 'base.en', 'Better with names (small.en)': 'small.en'}, lambda v: app.hear())
+    speed_page = choices('rate', {'Slow': -4, 'Normal': 0, 'Fast': 4, 'Faster': 8}, lambda v: setattr(app.voice, 'rate', v), other=lambda v: f'{v:+g}')
+    box_time_page = choices('boxSeconds', {f'{n} seconds': n for n in (6, 12, 20, 30)}, lambda v: setattr(box, 'seconds', v),
+                            other=lambda v: f'{v} seconds')
+
+    def set_clip_key():
+        box.show('Set the clip key', 'Press the key or combo that saves a clip in Steam or Game Bar. Esc to cancel.', stay=True, title=True)
+        was = app.lk.combo
+
+        def done(combo):
+            app.lk.set(was)   # the listen key's recorder is borrowed: it takes the combo for itself, so give it back
+            if combo:
+                app.cfg['clipKeys'] = combo
+                config.save(app.cfg)
+            box.show('Clip key', f'"Clip it" presses {hotkey.pretty(app.cfg["clipKeys"])}.' if combo else 'Unchanged.', title=True)
+        app.lk.record(done)
+
     def notes_open():
         os.startfile(notes.touch(app.game))
 
@@ -816,12 +968,16 @@ def tray(app, box):
             Item('Listen mode', action=app.toggle_listen, check=lambda: app.listener.on),
             Item(lambda: f'Listen key: {hotkey.pretty(app.lk.combo)}', action=set_listen_key, note='change'),
             Item('Microphone', sub=mics_page),
+            Item('Speech model', sub=speech_page),
+            Item(lambda: f"Clip key: {hotkey.pretty(app.cfg['clipKeys']) if app.cfg['clipKeys'] else 'none'}", action=set_clip_key, note='change'),
             Item('VOICE & ANSWERS', header=True),
             Item(lambda: f'AI: {brain.name(app.cfg)}', sub=ai_page),
             Item('Voice', sub=voices_page),
+            Item('Speaking speed', sub=speed_page),
             Item('Spoilers', action=flip('spoilers'), check=lambda: app.cfg['spoilers']),
             Item('Show answers in a box', action=flip('box'), check=lambda: app.cfg['box']),
             Item('Keep it up while talking', action=flip('boxWhileSpeaking'), check=lambda: app.cfg['boxWhileSpeaking'], enabled=lambda: app.cfg['box']),
+            Item('Box stays for', sub=box_time_page, enabled=lambda: app.cfg['box']),
             Item('Use the screen', action=flip('screen'), check=lambda: app.cfg['screen']),
             Item('MORE', header=True),
             Item('RomM', sub=romm_page) if romm.connected() else Item('Connect RomM', action=connect_romm, note='pair'),
@@ -830,6 +986,7 @@ def tray(app, box):
             Item('Settings file', action=lambda: (config.save(app.cfg), os.startfile(config.FILE))),
             Item('Ask log', action=lambda: os.path.exists(LOG) and os.startfile(LOG)),
             Item('Check for updates', action=check_now, note=telemetry.VERSION),
+            Item('Check every day', action=flip('checkUpdates'), check=lambda: app.cfg['checkUpdates']),
             Item('Quit', action=lambda: quit_(icon, None)),
         ]
 

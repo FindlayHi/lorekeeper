@@ -117,6 +117,9 @@ def run(app, box):
     def models():
         if not missing_models():
             return
+        ears, end = getattr(app, 'ears', None), time.time() + 900
+        while getattr(ears, 'getting', False) is not False and time.time() < end:
+            time.sleep(0.5)   # the speech model first, on a first run: one download and one progress line in the box at a time
         box.show('Getting the voice ready', 'Downloading the voice (about 120 MB, once). Answers use the Windows voice until it is done.',
                  stay=True, title=True)
         last = [-1]
