@@ -67,6 +67,8 @@
 
 You need **Windows 10 or 11** (Mac is coming soon) and one of: a **Claude Pro or Max** plan, a local model in **Ollama** or **LM Studio**, or an **OpenAI** (or other OpenAI-compatible) API key. See [Choose your AI](#choose-your-ai).
 
+Lorekeeper is **English only** for now: it hears English (its speech model, the wake word and the spoken commands are English), and it answers in English.
+
 1. **[Download Lorekeeper-Setup.exe](https://github.com/FindlayHi/lorekeeper/releases/latest/download/Lorekeeper-Setup.exe)** and run it. There's no admin prompt, and it installs just for you.
 2. Windows may say *"Windows protected your PC"*, because the installer isn't code-signed yet. Click **More info → Run anyway**.
 3. Lorekeeper starts in the tray. The first time, it downloads its voice (about 120 MB), and if [Claude Code](https://claude.com/claude-code) isn't installed it offers to install it and helps you sign in. Using Ollama, LM Studio or OpenAI instead? Say no, then pick it in the tray under **AI**.
@@ -160,7 +162,7 @@ Everything per game is a plain file you can edit, in `%APPDATA%\Lorekeeper\games
 <summary><b>⚙️ Settings</b></summary>
 <br>
 
-<a id="settings"></a>Most settings are in the tray: game, hotkey, listen key, voice, spoilers, box and screen. Everything else is in tray → **Settings file** (`%APPDATA%\Lorekeeper\config.json`):
+<a id="settings"></a>Most settings are in the tray: game, hotkey, listen key, microphone, speech model, clip key, AI, voice and its speed, spoilers, the box and how long it stays, screen, and the daily update check. Everything else is in tray → **Settings file** (`%APPDATA%\Lorekeeper\config.json`). Save the file and your edit is in use a couple of seconds later, with no restart; the box says which settings changed, or that the file has a mistake in it.
 
 | Key | Default | |
 |---|---|---|
@@ -168,15 +170,17 @@ Everything per game is a plain file you can edit, in `%APPDATA%\Lorekeeper\games
 | `hotkeyEverywhere` | `false` | off: the hotkey only acts while a game is in front, and anywhere else it passes through, so another app that uses the same shortcut still gets it there. On: it works everywhere |
 | `listen` / `listenKey` | `false` / `ctrl+alt+l` | listen mode and its on/off key |
 | `followUpSeconds` | `8` | how long after an answer a follow-up needs no name |
-| `clipKeys` | `ctrl+f10` | in Steam → Settings → Game Recording, set **Save the last 30 seconds** to <kbd>Ctrl</kbd>+<kbd>F10</kbd>. Or use `win+alt+g` for Game Bar |
+| `clipKeys` | `ctrl+f10` | tray → **Clip key**. In Steam → Settings → Game Recording, set **Save the last 30 seconds** to <kbd>Ctrl</kbd>+<kbd>F10</kbd>. Or use `win+alt+g` for Game Bar |
 | `kokoroVoice` | `af_nicole:0.5,bf_isabella:0.5` | tray → **Voice**, or any [Kokoro voice](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md) or blend |
 | `voice` | `kokoro` | `edge` = Microsoft online voices; `sapi` = Windows' robotic one |
 | `ai` | `claude` | `claude`, or `openai` for any OpenAI-compatible server (tray → **AI**) |
 | `model` / `deepModel` | `haiku` / `sonnet` | Claude Code's models; say "in detail" or "tell me more" for the deep one |
 | `aiUrl` / `aiModel` / `aiDeepModel` | | the server (e.g. `http://localhost:11434/v1`), its model, and an optional bigger one for "in detail" and gear math (blank = `aiModel`) |
-| `whisper` / `whisperDevice` | `base.en` / `cpu` | `small.en` hears names better; `cuda` with an NVIDIA GPU |
+| `whisper` / `whisperDevice` | `base.en` / `cpu` | tray → **Speech model**: `small.en` hears names better (a 480 MB download, with its progress in the box); `cuda` with an NVIDIA GPU |
+| `rate` | `0` | tray → **Speaking speed**: `-10` (slowest) to `10` (fastest) |
+| `checkUpdates` | `true` | tray → **Check every day**: once a day, ask GitHub whether there is a newer release |
 | `spoilers` / `screen` | `false` / `true` | also in the tray |
-| `boxWhileSpeaking` / `boxSeconds` | `false` / `12` | tray → **Keep it up while talking**: the box stays until the voice has finished, so you can read along; then it closes after `boxSeconds` |
+| `boxWhileSpeaking` / `boxSeconds` | `false` / `12` | tray → **Keep it up while talking**: the box stays until the voice has finished, so you can read along; then it closes after `boxSeconds` (tray → **Box stays for**) |
 | `font` / `fontSize` | *(pixel font)* / `0` | any installed font family, and its size in pixels, for the whole app: tray and answer box. `0` is the usual size for that font. tray → **Reset font** clears these |
 | `boxFont` / `boxFontSize` | *(follow `font`)* | the answer box's own font and size; whichever is blank follows `font` / `fontSize` |
 | `uiScale` | `0` | size of the answer box and tray as a multiple (`1.5` = 150%). `0` follows the Windows scale of the monitor they appear on. Font sizes above count as pixels at 100% and scale with it |

@@ -76,6 +76,13 @@ def changed(path):
     _read.pop(path, None)
 
 
+class Settings(dict):
+    """The settings as load() gives them. base: what the file said when these were last read from it or written to it,
+    which is how a hand edit made since is told from a change made in the app."""
+    base = None
+    odd = None   # {key: a value in the file of the wrong kind}, already reported: said once, not at every look
+
+
 def load():
     """The settings over the defaults. One that won't parse is copied to config.bad.json before anything saves over it."""
     global broken
@@ -83,17 +90,72 @@ def load():
         cfg = read_json(FILE)
         if not isinstance(cfg, dict):
             raise ValueError('not a JSON object')
-        return {**DEFAULTS, **cfg}
+        s = Settings({**DEFAULTS, **cfg})
     except FileNotFoundError:
-        return dict(DEFAULTS)
+        s = Settings(DEFAULTS)
     except (OSError, ValueError) as e:
         broken = f'{type(e).__name__}: {e}'
         print(f'config.json unreadable, using defaults ({broken}); kept as {BAD}', flush=True)
-        try:
-            shutil.copyfile(FILE, BAD)
-        except OSError as e2:
-            print('config.bad.json:', e2, flush=True)
-        return dict(DEFAULTS)
+        keep_bad()
+        s = Settings(DEFAULTS)
+    s.base = dict(s)
+    return s
+
+
+def keep_bad():
+    try:
+        shutil.copyfile(FILE, BAD)
+    except OSError as e:
+        print('config.bad.json:', e, flush=True)
+
+
+def fits(key, value):
+    """Is this the kind of value the setting takes (a number for boxSeconds, true or false for box)? A hand edit that
+    isn't is left out, so a typo can't break the box or the voice. A key Lorekeeper doesn't know is let through."""
+    d = DEFAULTS.get(key, value)
+    if d is None:
+        return value is None or isinstance(value, bool)
+    if isinstance(d, bool) or isinstance(value, bool):
+        return isinstance(d, bool) and isinstance(value, bool)
+    if isinstance(d, (int, float)):
+        return isinstance(value, (int, float))
+    return isinstance(value, type(d))
+
+
+def refresh(cfg):
+    """Take a hand edit of the settings file into the running settings: every key the file now says differently from
+    when these were last read or written, unless the app has changed that key itself since (the app's change is the
+    newer one). -> (the keys taken, the keys whose new value is the wrong kind and was left out), or None while the
+    file can't be read (an edit saved half-typed). Settings that didn't come from load() are left alone."""
+    base = getattr(cfg, 'base', None)
+    if base is None:
+        return set(), set()
+    try:
+        now = read_json(FILE)
+        if not isinstance(now, dict):
+            return None
+    except FileNotFoundError:
+        now = {}
+    except (OSError, ValueError):
+        return None
+    now = {**DEFAULTS, **now}
+    taken, wrong, odd = set(), set(), cfg.odd or {}
+    cfg.odd = {k: v for k, v in now.items() if not fits(k, v)}
+    for k in set(now) | set(base):
+        if k in cfg.odd:
+            if k not in odd or odd[k] != cfg.odd[k]:
+                wrong.add(k)
+            now[k] = base.get(k, DEFAULTS.get(k))   # as if the file still said what it did
+        elif now.get(k) == base.get(k):
+            continue
+        elif cfg.get(k) == base.get(k):
+            taken.add(k)
+            if k in now:
+                cfg[k] = now[k]
+            else:
+                cfg.pop(k, None)
+    cfg.base = now
+    return taken, wrong
 
 
 def write(path, text):
@@ -120,4 +182,10 @@ def write(path, text):
 
 
 def save(cfg):
+    """Only what differs from the defaults. A hand edit made since the file was last read is taken in first, not
+    written over: a tray toggle saves the running settings, and the edit would be gone."""
+    if refresh(cfg) is None:
+        keep_bad()   # the file can't be read right now: what is in it is kept beside it
     write(FILE, json.dumps({k: v for k, v in cfg.items() if DEFAULTS.get(k) != v}, indent=1))
+    if getattr(cfg, 'base', None) is not None:
+        cfg.base = {**DEFAULTS, **cfg}

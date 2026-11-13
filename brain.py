@@ -470,9 +470,24 @@ def split_note(answer, question, game=''):
     return (said or (LEFT_OUT if TAIL.sub('', answer.split('NOTE:')[0]).strip() else '')), (note if note_ok(note, question) else '')
 
 
-def ask(p, text, shots=(), on_text=lambda s: None, keep=None):
+TROUBLE = [   # Claude Code's own error text -> what the player hears; the text itself goes to the log, never the voice
+    (r'log ?in|auth|credential|401', 'Claude Code is signed out. Sign in from the tray: AI, Sign in to Claude.'),
+    (r'usage limit|rate.?limit|limit reached|quota|429', "You've reached your Claude plan's limit for now. Try again later, or pick another AI in the tray."),
+    (r'overloaded|529|50[0234]\b', 'Claude is busy right now. Try again in a moment.'),
+    (r'network|connect|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|getaddrinfo|fetch failed|offline|socket', "Couldn't reach Claude. Check your internet connection."),
+]
+FAILED = "Claude Code couldn't answer that. Try again."
+
+
+def trouble(err):
+    """A plain sentence for an error Claude Code gave: which of the things a player can do something about it is."""
+    print('claude -p failed:', err.strip()[:300], flush=True)
+    return next((say for rx, say in TROUBLE if re.search(rx, err, re.I)), FAILED)
+
+
+def ask(p, text, shots=(), on_text=lambda s: None, keep=None, on_tool=lambda name: None):
     """Sends the request, streams the answer's text to on_text as it arrives -> (answer, usd). shots: [(jpeg path, label)].
-    keep: private(...) for the search guard."""
+    keep: private(...) for the search guard. on_tool(name): the model has started using a tool (WebSearch)."""
     if isinstance(p, Http):
         return ask_http(p, text, shots, on_text), 0
     if keep and getattr(p, 'dir', None):
@@ -500,11 +515,15 @@ def ask(p, text, shots=(), on_text=lambda s: None, keep=None):
                     e = j.get('event', {})
                     if e.get('type') == 'message_start':
                         streamed = ''
+                    elif e.get('type') == 'content_block_start' and e.get('content_block', {}).get('type') in ('tool_use', 'server_tool_use'):
+                        on_tool(e['content_block'].get('name') or '')
                     elif e.get('type') == 'content_block_delta' and e.get('delta', {}).get('type') == 'text_delta':
                         streamed += e['delta']['text']
                         on_text(streamed)
                 elif j.get('type') == 'result':
                     answer, usd = (j.get('result') or '').strip(), j.get('total_cost_usd', 0)
+                    if j.get('is_error') and answer:   # "API Error: 529 {...}": Claude Code's words, not an answer
+                        answer = trouble(answer)
         finally:
             done.set()
         if why:
@@ -514,7 +533,7 @@ def ask(p, text, shots=(), on_text=lambda s: None, keep=None):
         if not answer and p.returncode:
             p.errors.seek(0)
             err = p.errors.read(300)
-            answer = 'Claude Code is signed out. Sign in from the tray: AI, Sign in to Claude.' if re.search(r'log ?in|auth', err, re.I) else f'Claude failed: {err[:150]}'
+            answer = trouble(err)
         return answer or 'No answer came back.', usd
     finally:
         stop(p)   # answered, hung or broken: the process is over, and its folder with the notes goes now
