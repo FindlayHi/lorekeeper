@@ -43,10 +43,23 @@ def agent(url):
     return f'Lorekeeper/{telemetry.VERSION} (+https://lorekeeper-cgv.pages.dev/)'
 
 
-def get(url, timeout=4):
+MOST_BYTES = 8_000_000   # of any one page: a MediaWiki API answer stops at 8 MB by default, and a hostile page never ends
+
+
+def read(url, timeout=4, most=MOST_BYTES, ua=None):
+    """The bytes of a public https page, never more than `most`: a longer one is refused, not cut (half a JSON answer
+    or half an image is no use), so a page can't fill memory or the cache."""
     check_url(url)
-    req = urllib.request.Request(url, headers={'User-Agent': agent(url)})
-    return _opener.open(req, timeout=timeout).read().decode('utf-8', 'replace')
+    req = urllib.request.Request(url, headers={'User-Agent': ua or agent(url)})
+    with _opener.open(req, timeout=timeout) as r:
+        data = r.read(most + 1)
+    if len(data) > most:
+        raise ValueError(f'not fetching {url[:80]}: it is over {most} bytes')
+    return data
+
+
+def get(url, timeout=4):
+    return read(url, timeout).decode('utf-8', 'replace')
 
 
 CACHE_FILES, PAGE_TTL, SEARCH_TTL = 200, 24 * 3600, 3600
